@@ -50,10 +50,15 @@ IOEventFlags jsiGetConsoleDevice();
 void jsiConsolePrintChar(char data);
 /// Transmit a string
 void jsiConsolePrint(const char *str);
-/** Transmit a formatted String. This is a VERY CUT DOWN printf
+/** Transmit a formatted String. This is a VERY CUT DOWN and bastardised printf
  * Supported are:
  *   %d = int
- *   %s = string
+ *   %x = int as hex
+ *   %l = JsVarInt
+ *   %f = JsVarFloat
+ *   %s = string (char *)
+ *   %c = char
+ *   %v = JsVar *
  *
  * Anything else will assert
  */

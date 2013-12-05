@@ -132,6 +132,8 @@ void jsiConsolePrint(const char *str) {
 }
 
 void jsiConsolePrintf(const char *fmt, ...) {
+  char buf[32];
+  JsVar *v;
   va_list argp;
   va_start(argp, fmt);
 
@@ -139,8 +141,13 @@ void jsiConsolePrintf(const char *fmt, ...) {
     if (*fmt == '%') {
       fmt++;
       switch (*fmt++) {
-      case 'd': jsiConsolePrintInt(va_arg(argp, int)); break;
+      case 'd': itoa(va_arg(argp, int), buf, 10); jsiConsolePrint(buf); break;
+      case 'x': itoa(va_arg(argp, int), buf, 16); jsiConsolePrint(buf); break;
+      case 'l': itoa(va_arg(argp, JsVarInt), buf, 10); jsiConsolePrint(buf);  break;
+      case 'f': ftoa(va_arg(argp, JsVarFloat), buf); jsiConsolePrint(buf);  break;
       case 's': jsiConsolePrint(va_arg(argp, char *)); break;
+      case 'c': jsiConsolePrintChar(va_arg(argp, char)); break;
+      case 'v': v = jsvAsString(va_arg(argp, JsVar*), true); jsiConsolePrintStringVar(v); jsvUnLock(v); break;
       default: assert(0); return; // eep
       }
       jsiConsolePrintChar('\r');
