@@ -524,6 +524,10 @@ void httpClientConnectionsIdle() {
 
 
 void httpIdle() {
+#ifdef USE_CC3000
+  cc3000_check_irq_pin(); // check CC3k, as we're working without IRQs now
+#endif
+
   JsVar *arr = httpGetArray(HTTP_ARRAY_HTTP_SERVERS,false);
   if (arr) {
     JsArrayIterator it;

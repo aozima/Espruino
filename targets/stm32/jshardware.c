@@ -28,7 +28,7 @@ JSH_SPI_FLAGS jshSPIFlags[SPIS];
 
 #define IRQ_PRIOR_MASSIVE 0
 #define IRQ_PRIOR_USART 6 // a little higher so we don't get lockups of something tries to print
-#define IRQ_PRIOR_SPI 7
+#define IRQ_PRIOR_SPI 3
 #define IRQ_PRIOR_MED 7
 #define IRQ_PRIOR_LOW 15
 
@@ -58,7 +58,7 @@ unsigned long long jshPinStateIsManual = 0;
 #else
 #define WAIT_UNTIL_N_CYCLES 2000000
 #endif
-#define WAIT_UNTIL(CONDITION, REASON) { \
+#define WAIT_UNTIL(CONDITION, REASON) if (!jspIsInterrupted()) { \
     int timeout = WAIT_UNTIL_N_CYCLES;                                              \
     while (!(CONDITION) && !jspIsInterrupted() && (timeout--)>0);                  \
     if (timeout<=0 || jspIsInterrupted()) jsError("INTERNAL: Timeout on "REASON);   \

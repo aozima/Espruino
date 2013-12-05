@@ -38,7 +38,6 @@
 #define HI(value)               (((value) & 0xFF00) >> 8)
 #define LO(value)               ((value) & 0x00FF)
 
-volatile bool cc3000_ints_enabled = false;
 volatile bool cc3000_in_interrupt = false;
 
 typedef struct
@@ -87,7 +86,7 @@ void  cc3000_spi_open(void)
   inf.pinSCK =  WLAN_CLK_PIN;
   inf.pinMISO = WLAN_MISO_PIN;
   inf.pinMOSI = WLAN_MOSI_PIN;
-  inf.baudRate = 100000; // FIXME - just slow for debug
+  inf.baudRate = 1000000;
   inf.spiMode = SPIF_SPI_MODE_1;  // Mode 1   CPOL= 0  CPHA= 1
   jshSPISetup(WLAN_SPI, &inf);
 
@@ -98,7 +97,6 @@ void  cc3000_spi_open(void)
   jshPinOutput(WLAN_EN_PIN, 0); // disable WLAN
   jshSetPinStateIsManual(WLAN_IRQ_PIN, true);
   jshPinSetState(WLAN_IRQ_PIN, JSHPINSTATE_GPIO_IN_PULLUP); // flip into read mode with pullup
-  jshPinWatch(WLAN_IRQ_PIN, true); // watch IRQ pin
 
   // wait a little (ensure that WLAN takes effect)
   jshDelayMicroseconds(500*1000); // force a 500ms delay! FIXME
@@ -189,7 +187,7 @@ cc3000_spi_write(unsigned char *pUserBuffer, unsigned short usLength)
     if (sSpiInformation.ulSpiState == eSPI_STATE_POWERUP)
     {
         while (sSpiInformation.ulSpiState != eSPI_STATE_INITIALIZED)
-            ;
+          cc3000_check_irq_pin();
     }
 
     if (sSpiInformation.ulSpiState == eSPI_STATE_INITIALIZED)
@@ -226,15 +224,20 @@ SpiReadDataSynchronous(unsigned char *data, unsigned short size)
 {
 
   int bSend = 0, bRecv = 0;
-  while (bSend<size || bRecv<size) {
+  while ((bSend<size || bRecv<size) && !jspIsInterrupted()) {
     if (bSend < size) {
-      unsigned char d = READ;
-      jshSPISend(WLAN_SPI, &d, 1, true);
-      bSend++;
+      unsigned char d[] = {READ,READ,READ,READ,READ,READ,READ,READ};
+      int c = size - bSend;
+      if (c>sizeof(d)) c=sizeof(d);
+      jshSPISend(WLAN_SPI, &d, c, true);
+      bSend+=c;
     }
-    unsigned char *buf[IOEVENT_MAXCHARS];
-    unsigned int i, c = jshSPIReceive(WLAN_SPI, buf, sizeof(buf));
-    for (i=0;i<c;i++) data[bRecv++] = buf[c];
+    unsigned char buf[IOEVENT_MAXCHARS];
+    unsigned int i, c;
+    do {
+      c = jshSPIReceive(WLAN_SPI, buf, sizeof(buf));
+      for (i=0;i<c;i++) data[bRecv++] = buf[i];
+    } while (c>0);
   }
 }
 
@@ -306,7 +309,7 @@ void
 cc3000_spi_resume(void) {
 }
 
-void cc3000_irq_handler_x(void)
+void cc3000_irq_handler(void)
 {
   if (tSLInformation.usEventOrDataReceived) return; // there's already an interrupt that we haven't handled
 
@@ -352,12 +355,6 @@ void cc3000_irq_handler_x(void)
   cc3000_in_interrupt = false;
 }
 
-void cc3000_irq_handler(void)
-{
-  if (!cc3000_ints_enabled) return; // no ints enabled
-  cc3000_irq_handler_x();
-}
-
 long cc3000_read_irq_pin(void)
 {
     return jshPinGetValue(WLAN_IRQ_PIN);
@@ -365,19 +362,14 @@ long cc3000_read_irq_pin(void)
 
 void cc3000_irq_enable(void) {
   cc3000_check_irq_pin();
-  cc3000_ints_enabled = true;
 }
 
 void cc3000_irq_disable(void) {
-  cc3000_ints_enabled = false;
 }
 
 void cc3000_check_irq_pin() {
   if (!cc3000_in_interrupt && !cc3000_read_irq_pin()) {
-    bool ints = cc3000_ints_enabled;
-    cc3000_ints_enabled = false;
-    cc3000_irq_handler_x();
-    cc3000_ints_enabled = ints;
+    cc3000_irq_handler();
   }
 }
 

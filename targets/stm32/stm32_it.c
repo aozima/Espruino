@@ -301,7 +301,7 @@ void USART6_IRQHandler(void) {
 #endif
 
 static inline void SPI_IRQHandler(SPI_TypeDef *SPI, IOEventFlags device) {
-  if(SPI_I2S_GetITStatus(SPI, SPI_I2S_IT_RXNE) != RESET) {
+  while (SPI_I2S_GetITStatus(SPI, SPI_I2S_IT_RXNE) != RESET) {
      // Read one byte/word from the receive data register
      uint16_t c = SPI_I2S_ReceiveData(SPI);
      // only put it in the RX queue if we need to

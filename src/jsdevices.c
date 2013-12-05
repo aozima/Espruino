@@ -21,9 +21,6 @@
 #ifdef USE_TRIGGER
 #include "trigger.h"
 #endif
-#ifdef USE_CC3000
-#include "board_spi.h"
-#endif
 
 // ----------------------------------------------------------------------------
 //                                                                     BUFFERS
@@ -204,13 +201,6 @@ void jshPushIOWatchEvent(IOEventFlags channel) {
   if (trigHandleEXTI(channel | (state?EV_EXTI_IS_HIGH:0), time))
     return;
 #endif
-#ifdef USE_CC3000
-  IOEvent event;
-  event.flags = channel;
-  if (!state && jshIsEventForPin(&event, WLAN_IRQ_PIN)) {
-    cc3000_irq_handler();
-  }
-#endif
  // Otherwise add this event
  jshPushIOEvent(channel | (state?EV_EXTI_IS_HIGH:0), time);
 }
@@ -246,7 +236,7 @@ bool jshPopIOEventFor(IOEventFlags eventType, IOEvent *result) {
       // Now we need to shift all the IO events back over this one.
       unsigned char p = ioTail;
       while (p != ioPtr) {
-        unsigned char n = (unsigned char)((ioTail+1) & IOBUFFERMASK);
+        unsigned char n = (unsigned char)((p+1) & IOBUFFERMASK);
         ioBuffer[n] = ioBuffer[p];
         p = n;
       }
