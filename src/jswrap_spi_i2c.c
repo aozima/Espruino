@@ -135,7 +135,10 @@ JsVar *jswrap_spi_send(JsVar *parent, JsVar *srcdata, Pin nss_pin) {
   JsVar *dst = 0;
 
   // assert NSS
-  if (nss_pin>=0) jshPinOutput(nss_pin, false);
+  if (nss_pin>=0) {
+    jshSPIWait(device);
+    jshPinOutput(nss_pin, false);
+  }
 
   // send data
   if (jsvIsNumeric(srcdata)) {
@@ -152,10 +155,13 @@ JsVar *jswrap_spi_send(JsVar *parent, JsVar *srcdata, Pin nss_pin) {
     int incount = 0, outcount = 0;
     while (jsvArrayIteratorHasElement(&it) || outcount < incount) {
       if (jsvArrayIteratorHasElement(&it)) {
-        unsigned char in = (unsigned char)jsvGetIntegerAndUnLock(jsvArrayIteratorGetElement(&it));
-        jsvArrayIteratorNext(&it);
-        incount++;
-        jshSPISend(device, &in, 1, true);
+        int c = 0;
+        do {
+          buf[c++] = (unsigned char)jsvGetIntegerAndUnLock(jsvArrayIteratorGetElement(&it));
+          jsvArrayIteratorNext(&it);
+        } while (c<sizeof(buf) && jsvArrayIteratorHasElement(&it));
+        incount+=c;
+        jshSPISend(device, buf, c, true);
       }
       unsigned int i,c = jshSPIReceive(device, buf, sizeof(buf));
       for (i=0;i<c;i++) {
@@ -173,13 +179,15 @@ JsVar *jswrap_spi_send(JsVar *parent, JsVar *srcdata, Pin nss_pin) {
     int incount = 0, outcount = 0;
     while (jsvStringIteratorHasChar(&it) || outcount < incount) {
       if (jsvStringIteratorHasChar(&it)) {
-        unsigned char in = (unsigned char)jsvStringIteratorGetChar(&it);
-        jsvStringIteratorNext(&it);
-        incount++;
-        jshSPISend(device, &in, 1, true);
+        int c = 0;
+        do {
+          buf[c++] = (unsigned char)jsvStringIteratorGetChar(&it);
+          jsvStringIteratorNext(&it);
+        } while (c<sizeof(buf) && jsvStringIteratorHasChar(&it));
+        incount += c;
+        jshSPISend(device, buf, c, true);
       }
       unsigned int c = jshSPIReceive(device, buf, sizeof(buf));
-      jsiConsolePrintf("C %d\n",c);
       outcount+=c;
       if (c>0) jsvAppendStringBuf(dst, buf, c);
     }
@@ -195,10 +203,13 @@ JsVar *jswrap_spi_send(JsVar *parent, JsVar *srcdata, Pin nss_pin) {
     int incount = 0, outcount = 0;
     while (jsvIteratorHasElement(&it) || outcount < incount) {
       if (jsvIteratorHasElement(&it)) {
-        unsigned char in = (unsigned char)jsvIteratorGetIntegerValue(&it);
-        jsvIteratorNext(&it);
-        incount++;
-        jshSPISend(device, &in, 1, true);
+        int c = 0;
+        do {
+          buf[c++] = (unsigned char)jsvIteratorGetIntegerValue(&it);
+          jsvIteratorNext(&it);
+        } while (c<sizeof(buf) && jsvIteratorHasElement(&it));
+        incount += c;
+        jshSPISend(device, buf, c, true);
       }
       unsigned int i,c = jshSPIReceive(device, buf, sizeof(buf));
       for (i=0;i<c;i++) {
@@ -215,7 +226,10 @@ JsVar *jswrap_spi_send(JsVar *parent, JsVar *srcdata, Pin nss_pin) {
   }
 
   // de-assert NSS
-  if (nss_pin>=0) jshPinOutput(nss_pin, true);
+  if (nss_pin>=0) {
+    jshSPIWait(device);
+    jshPinOutput(nss_pin, true);
+  }
   return dst;
 }
 
@@ -259,7 +273,6 @@ void spi_send8bit(IOEventFlags device, unsigned char data, int bit0, int bit1) {
 void jswrap_spi_send4bit(JsVar *parent, JsVar *srcdata, int bit0, int bit1, Pin nss_pin) {
   NOT_USED(parent);
   IOEventFlags device = jsiGetDeviceFromClass(parent);
-  jshSPISet16(device, true); // 16 bit output
 
   if (bit0==0 && bit1==0) {
     bit0 = 0x01;
@@ -295,7 +308,6 @@ void jswrap_spi_send4bit(JsVar *parent, JsVar *srcdata, int bit0, int bit1, Pin 
 
   // de-assert NSS
   if (nss_pin>=0) jshPinOutput(nss_pin, true);
-  jshSPISet16(device, false); // back to 8 bit
 }
 
 /*JSON{ "type":"method", "class": "SPI", "name" : "send8bit",
@@ -310,7 +322,6 @@ void jswrap_spi_send4bit(JsVar *parent, JsVar *srcdata, int bit0, int bit1, Pin 
 void jswrap_spi_send8bit(JsVar *parent, JsVar *srcdata, int bit0, int bit1, Pin nss_pin) {
   NOT_USED(parent);
   IOEventFlags device = jsiGetDeviceFromClass(parent);
-  jshSPISet16(device, true); // 16 bit output
 
   if (bit0==0 && bit1==0) {
     bit0 = 0x03;
@@ -346,7 +357,6 @@ void jswrap_spi_send8bit(JsVar *parent, JsVar *srcdata, int bit0, int bit1, Pin 
 
   // de-assert NSS
   if (nss_pin>=0) jshPinOutput(nss_pin, true);
-  jshSPISet16(device, false); // back to 8 bit
 }
 
 /*JSON{ "type":"class",

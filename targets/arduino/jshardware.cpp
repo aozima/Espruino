@@ -208,7 +208,7 @@ void jshSPISet16(IOEventFlags device, bool is16) {
 }
 
 /** Send data through the given SPI device. receiveData determines whether received data should be stored */
-void jshSPISend(IOEventFlags device, unsigned char *data, int count, bool receiveData) {
+void jshSPISend(IOEventFlags device, unsigned char *data, unsigned int count, bool receiveData) {
 }
 
 /** Wait until all SPI data has been sent */

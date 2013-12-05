@@ -143,7 +143,6 @@ void jshIOEventOverflowed() {
 #endif
 }
 
-
 void jshPushIOCharEvent(IOEventFlags channel, char charData) {
   if (charData==3 && channel==jsiGetConsoleDevice()) {
     // Ctrl-C - force interrupt
@@ -153,13 +152,12 @@ void jshPushIOCharEvent(IOEventFlags channel, char charData) {
     jspSetInterrupted(true);
     return;
   }
-  if (DEVICE_IS_USART(channel) && jshGetEventsUsed() > IOBUFFER_XOFF) 
+  if (DEVICE_IS_USART(channel) && jshGetEventsUsed() > IOBUFFER_XOFF)
     jshSetFlowControlXON(channel, false);
   // Check for existing buffer (we must have at least 2 in the queue to avoid dropping chars though!)
-  unsigned char nextTail = (unsigned char)((ioTail+1) & IOBUFFERMASK);
-  if (ioHead!=ioTail && ioHead!=nextTail) {
+  unsigned char lastHead = (unsigned char)((ioHead+IOBUFFERMASK) & IOBUFFERMASK); // one behind head
+  if (ioHead!=ioTail && ioTail!=lastHead) {
     // we can do this because we only read in main loop, and we're in an interrupt here
-    unsigned char lastHead = (unsigned char)((ioHead+IOBUFFERMASK) & IOBUFFERMASK); // one behind head
     if (IOEVENTFLAGS_GETTYPE(ioBuffer[lastHead].flags) == channel &&
         IOEVENTFLAGS_GETCHARS(ioBuffer[lastHead].flags) < IOEVENT_MAXCHARS) {
       // last event was for this event type, and it has chars left
@@ -175,8 +173,8 @@ void jshPushIOCharEvent(IOEventFlags channel, char charData) {
     jshIOEventOverflowed();
     return; // queue full - dump this event!
   }
-  ioBuffer[ioHead].flags = channel;
-  IOEVENTFLAGS_SETCHARS(ioBuffer[ioHead].flags, 1);
+  ioBuffer[ioHead].flags = channel & (~EV_CHARS_MASK);
+  // Zeroing out the bits of the chars mask ^^^^^^^^ shows that we have ONE char
   ioBuffer[ioHead].data.chars[0] = charData;
   ioHead = nextHead;
 }
