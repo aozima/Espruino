@@ -1708,7 +1708,7 @@ void jshSPISetup(IOEventFlags device, JshSPIInfo *inf) {
   //jsiConsolePrint("BaudRate ");jsiConsolePrintInt(inf->baudRate);jsiConsolePrint("\n");
   for (i=0;i<sizeof(baudRatesDivisors)/sizeof(int);i++) {
     //jsiConsolePrint("Divisor ");jsiConsolePrintInt(baudRatesDivisors[i]);
-    int rate = (int)RCC_ClocksStatus.PCLK2_Frequency / baudRatesDivisors[i];
+    int rate = (int)RCC_ClocksStatus.PCLK1_Frequency / baudRatesDivisors[i];
     //jsiConsolePrint(" rate "); jsiConsolePrintInt(rate);
     int rateDiff = inf->baudRate - rate;
     if (rateDiff<0) rateDiff *= -1;
