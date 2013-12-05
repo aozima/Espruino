@@ -63,7 +63,7 @@ void Handle_USBAsynchXfer (void)
     // try and fill the buffer
     int c;
     while (USB_Tx_length<VIRTUAL_COM_PORT_DATA_SIZE && 
-           ((c = jshGetCharToTransmit(EV_USBSERIAL)) >=0) ) { // get byte to transmit
+           ((c = jshGetCharToTransmit(EV_USBSERIAL, 0)) >=0) ) { // get byte to transmit
       USB_TX_Buffer[USB_Tx_length++] = c;
     }
 
@@ -103,7 +103,7 @@ void EP1_IN_Callback (void)
     // try and fill the buffer
     int c;
     while (USB_Tx_length<VIRTUAL_COM_PORT_DATA_SIZE && 
-           ((c = jshGetCharToTransmit(EV_USBSERIAL)) >= 0) ) { // get byte to transmit
+           ((c = jshGetCharToTransmit(EV_USBSERIAL, 0)) >= 0) ) { // get byte to transmit
       USB_TX_Buffer[USB_Tx_length++] = c;
     }
 

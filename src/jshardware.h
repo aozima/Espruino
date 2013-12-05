@@ -117,6 +117,9 @@ bool jshIsEventForPin(IOEvent *event, Pin pin);
 
 /** Is the given device initialised? */
 bool jshIsDeviceInitialised(IOEventFlags device);
+/** Kick a device into action (if required) when we have data for it to transmit.
+ * For instance we may need to set up interrupts for USART/SPI etc*/
+void jshKickDevice(IOEventFlags device);
 
 
 #define DEFAULT_BAUD_RATE               9600
@@ -144,9 +147,6 @@ static inline void jshUSARTInitInfo(JshUSARTInfo *inf) {
 
 /** Set up a UART, if pins are -1 they will be guessed */
 void jshUSARTSetup(IOEventFlags device, JshUSARTInfo *inf);
-/** Kick a device into action (if required). For instance we may need
- * to set up interrupts */
-void jshUSARTKick(IOEventFlags device);
 
 typedef enum {
   SPIF_CPHA = 1,
@@ -182,14 +182,16 @@ static inline void jshSPIInitInfo(JshSPIInfo *inf) {
 
 /** Set up SPI, if pins are -1 they will be guessed */
 void jshSPISetup(IOEventFlags device, JshSPIInfo *inf);
-/** Send data through the given SPI device (if data>=0), and return the result
- * of the previous send (or -1). If data<0, no data is sent and the function
- * waits for data to be returned */
-int jshSPISend(IOEventFlags device, int data);
-/** Send 16 bit data through the given SPI device. */
-void jshSPISend16(IOEventFlags device, int data);
 /** Set whether to send 16 bits or 8 over SPI */
 void jshSPISet16(IOEventFlags device, bool is16);
+/** Send data through the given SPI device. receiveData determines whether received data should be stored or thrown away */
+void jshSPISend(IOEventFlags device, unsigned char *data, unsigned int count, bool receiveData);
+/** Receive data from the SPI device (if any is available). Returns the number of characters available */
+unsigned int jshSPIReceive(IOEventFlags device, unsigned char *data, unsigned int count);
+/** Wait until all SPI data has been sent */
+void jshSPIWait(IOEventFlags device);
+
+
 
 typedef struct {
   Pin pinSCL;

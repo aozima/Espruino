@@ -65,7 +65,7 @@ void jshTransmit(IOEventFlags device, unsigned char data) {
   txBuffer[txHead].data = (char)data;
   txHead = txHeadNext;
 
-  jshUSARTKick(device); // set up interrupts if required
+  jshKickDevice(device); // set up interrupts if required
 
 #else // if PC, just put to stdout
   if (device==DEFAULT_CONSOLE_DEVICE) {
@@ -75,11 +75,13 @@ void jshTransmit(IOEventFlags device, unsigned char data) {
 #endif
 }
 
-// Try and get a character for transmission - could just return -1 if nothing
-int jshGetCharToTransmit(IOEventFlags device) {
+/** Try and get a character for transmission - could just return -1 if nothing.
+ * This should be run IN AN INTERRUPT */
+int jshGetCharToTransmit(IOEventFlags device, IOEventFlags *deviceFlags) {
   unsigned char ptr = txTail;
   while (txHead != ptr) {
     if (IOEVENTFLAGS_GETTYPE(txBuffer[ptr].flags) == device) {
+      if (deviceFlags) *deviceFlags = txBuffer[ptr].flags;
       unsigned char data = txBuffer[ptr].data;
       if (ptr != txTail) { // so we weren't right at the back of the queue
         // we need to work back from ptr (until we hit tail), shifting everything forwards
@@ -107,7 +109,7 @@ void jshTransmitFlush() {
 
 // Clear everything from a device
 void jshTransmitClearDevice(IOEventFlags device) {
-  while (jshGetCharToTransmit(device)>=0);
+  while (jshGetCharToTransmit(device, 0)>=0);
 }
 
 bool jshHasTransmitData() {
@@ -116,6 +118,15 @@ bool jshHasTransmitData() {
 #else
   return false;
 #endif
+}
+
+bool jshHasTransmitDataOnDevice(IOEventFlags device) {
+  unsigned char ptr = txTail;
+  while (txHead != ptr) {
+    if (IOEVENTFLAGS_GETTYPE(txBuffer[ptr].flags) == device) return true;
+    ptr = (unsigned char)((ptr+1)&TXBUFFERMASK);
+  }
+  return false;
 }
 
 // ----------------------------------------------------------------------------
@@ -224,6 +235,33 @@ bool jshPopIOEvent(IOEvent *result) {
   *result = ioBuffer[ioTail];
   ioTail = (unsigned char)((ioTail+1) & IOBUFFERMASK);
   return true;
+}
+
+// returns true on success
+bool jshPopIOEventFor(IOEventFlags eventType, IOEvent *result) {
+  // Search through all events
+  unsigned char ioPtr = ioTail;
+  while (ioPtr!=ioHead) {
+    if (IOEVENTFLAGS_GETTYPE(ioBuffer[ioPtr].flags) == eventType) {
+      // Got one!
+      *result = ioBuffer[ioPtr];
+      // Now we need to shift all the IO events back over this one.
+      unsigned char p = ioTail;
+      while (p != ioPtr) {
+        unsigned char n = (unsigned char)((ioTail+1) & IOBUFFERMASK);
+        ioBuffer[n] = ioBuffer[p];
+        p = n;
+      }
+      // finally advance the tail
+      ioTail = (unsigned char)((ioTail+1) & IOBUFFERMASK);
+      // all done
+      return true;
+    }
+    // try next one...
+    ioPtr = (unsigned char)((ioPtr+1) & IOBUFFERMASK);
+  }
+  // no events found
+  return false;
 }
 
 bool jshHasEvents() {

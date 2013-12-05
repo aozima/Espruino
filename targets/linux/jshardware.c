@@ -448,7 +448,7 @@ void jshUSARTSetup(IOEventFlags device, JshUSARTInfo *inf) {
 
 /** Kick a device into action (if required). For instance we may need
  * to set up interrupts */
-void jshUSARTKick(IOEventFlags device) {
+void jshKickDevice(IOEventFlags device) {
 }
 
 void jshSPISetup(IOEventFlags device, JshSPIInfo *inf) {

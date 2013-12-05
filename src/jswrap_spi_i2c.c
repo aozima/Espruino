@@ -124,6 +124,7 @@ void jswrap_spi_setup(JsVar *parent, JsVar *options) {
 JsVar *jswrap_spi_send(JsVar *parent, JsVar *srcdata, Pin nss_pin) {
   NOT_USED(parent);
   IOEventFlags device = jsiGetDeviceFromClass(parent);
+  unsigned char buf[IOEVENT_MAXCHARS];
 
   if (!jshIsDeviceInitialised(device)) {
     JshSPIInfo inf;
@@ -138,57 +139,51 @@ JsVar *jswrap_spi_send(JsVar *parent, JsVar *srcdata, Pin nss_pin) {
 
   // send data
   if (jsvIsNumeric(srcdata)) {
-      jshSPISend(device, (unsigned char)jsvGetInteger(srcdata));
-      dst = jsvNewFromInteger(jshSPISend(device, -1)); // retrieve the byte (no send!)
+      unsigned char in = (unsigned char)jsvGetInteger(srcdata);
+      jshSPISend(device, &in, 1, true);
+      jshSPIWait(device);
+      unsigned int c = jshSPIReceive(device, buf, sizeof(buf));
+      assert(c==1);
+      dst = jsvNewFromInteger(buf[0]); // retrieve the byte (no send!)
   } else if (jsvIsArray(srcdata)) {
     dst = jsvNewWithFlags(JSV_ARRAY);
     JsArrayIterator it;
     jsvArrayIteratorNew(&it, srcdata);
     int incount = 0, outcount = 0;
-    while (jsvArrayIteratorHasElement(&it)) {
-      unsigned char in = (unsigned char)jsvGetIntegerAndUnLock(jsvArrayIteratorGetElement(&it));
-      incount++;
-      int out = jshSPISend(device, in); // this returns -1 only if no data (so if -1 gets in an array it is an error!)
-      if (out>=0) {
+    while (jsvArrayIteratorHasElement(&it) || outcount < incount) {
+      if (jsvArrayIteratorHasElement(&it)) {
+        unsigned char in = (unsigned char)jsvGetIntegerAndUnLock(jsvArrayIteratorGetElement(&it));
+        jsvArrayIteratorNext(&it);
+        incount++;
+        jshSPISend(device, &in, 1, true);
+      }
+      unsigned int i,c = jshSPIReceive(device, buf, sizeof(buf));
+      for (i=0;i<c;i++) {
         outcount++;
-        JsVar *outVar = jsvNewFromInteger(out);
+        JsVar *outVar = jsvNewFromInteger(buf[i]);
         jsvArrayPush(dst, outVar);
         jsvUnLock(outVar);
       }
-      jsvArrayIteratorNext(&it);
     }
     jsvArrayIteratorFree(&it);
-    // finally add the remaining bytes  (no send!)
-    while (outcount < incount) {
-      outcount++;
-      int out = jshSPISend(device, -1);
-      JsVar *outVar = jsvNewFromInteger(out);
-      jsvArrayPush(dst, outVar);
-      jsvUnLock(outVar);
-    }
   } else if (jsvIsString(srcdata)) {
     dst = jsvNewFromEmptyString();
     JsvStringIterator it;
     jsvStringIteratorNew(&it, srcdata, 0);
     int incount = 0, outcount = 0;
-    while (jsvStringIteratorHasChar(&it)) {
-      unsigned char in = (unsigned char)jsvStringIteratorGetChar(&it);
-      incount++;
-      int out = jshSPISend(device, in);
-      if (out>=0) {
-        outcount++;
-        char outc = (char)out;
-        jsvAppendStringBuf(dst, (char*)&outc, 1);
+    while (jsvStringIteratorHasChar(&it) || outcount < incount) {
+      if (jsvStringIteratorHasChar(&it)) {
+        unsigned char in = (unsigned char)jsvStringIteratorGetChar(&it);
+        jsvStringIteratorNext(&it);
+        incount++;
+        jshSPISend(device, &in, 1, true);
       }
-      jsvStringIteratorNext(&it);
+      unsigned int c = jshSPIReceive(device, buf, sizeof(buf));
+      jsiConsolePrintf("C %d\n",c);
+      outcount+=c;
+      if (c>0) jsvAppendStringBuf(dst, buf, c);
     }
     jsvStringIteratorFree(&it);
-    // finally add the remaining bytes  (no send!)
-    while (outcount < incount) {
-      outcount++;
-      unsigned char out = (unsigned char)jshSPISend(device, -1);
-      jsvAppendStringBuf(dst, (char*)&out, 1);
-    }
   } else if (jsvIsIterable(srcdata)) {
     JsVar *lenVar = jsvNewFromInteger(jsvGetLength(srcdata));
     dst = jswrap_typedarray_constructor(ARRAYBUFFERVIEW_UINT8, lenVar,0,0);
@@ -197,12 +192,20 @@ JsVar *jswrap_spi_send(JsVar *parent, JsVar *srcdata, Pin nss_pin) {
     JsvArrayBufferIterator dstit;
     jsvIteratorNew(&it, srcdata);
     jsvArrayBufferIteratorNew(&dstit, dst, 0);
-    while (jsvIteratorHasElement(&it)) {
-      unsigned char in = (unsigned char)jsvIteratorGetIntegerValue(&it);
-      int out = jshSPISend(device, in);
-      jsvArrayBufferIteratorSetIntegerValue(&dstit, out);
-      jsvIteratorNext(&it);
-      jsvArrayBufferIteratorNext(&dstit);
+    int incount = 0, outcount = 0;
+    while (jsvIteratorHasElement(&it) || outcount < incount) {
+      if (jsvIteratorHasElement(&it)) {
+        unsigned char in = (unsigned char)jsvIteratorGetIntegerValue(&it);
+        jsvIteratorNext(&it);
+        incount++;
+        jshSPISend(device, &in, 1, true);
+      }
+      unsigned int i,c = jshSPIReceive(device, buf, sizeof(buf));
+      for (i=0;i<c;i++) {
+        outcount++;
+        jsvArrayBufferIteratorSetIntegerValue(&dstit, buf[c]);
+        jsvArrayBufferIteratorNext(&dstit);
+      }
     }
     jsvIteratorFree(&it);
     jsvArrayBufferIteratorFree(&dstit);
@@ -224,25 +227,24 @@ void spi_send4bit(IOEventFlags device, unsigned char data, int bit0, int bit1) {
       (unsigned char)((bit1<<4) | bit0),
       (unsigned char)((bit1<<4) | bit1),
   };
+  unsigned char spiData[] = {
+      lookup[(data>>6)&3], lookup[(data>>4)&3],
+      lookup[(data>>2)&3], lookup[(data   )&3]
+  };
   // Send each bit as 4 bits, MSB first
-  /*jshSPISend(device, lookup[(data>>6)&3]);
-  jshSPISend(device, lookup[(data>>4)&3]);
-  jshSPISend(device, lookup[(data>>2)&3]);
-  jshSPISend(device, lookup[(data   )&3]);*/
-  jshSPISend16(device, (lookup[(data>>6)&3]<<8) | lookup[(data>>4)&3]);
-  jshSPISend16(device, (lookup[(data>>2)&3]<<8) | lookup[(data   )&3]);
+  jshSPISend(device, spiData, sizeof(spiData), false/* no recv*/);
 }
 
 // used by jswrap_spi_send8bit
 void spi_send8bit(IOEventFlags device, unsigned char data, int bit0, int bit1) {
   // Send each bit as 8 bits, MSB first
-  /*int i;
-  for (i=7;i>=0;i--)
-    jshSPISend(device, (unsigned char)(((data>>i)&1) ? bit1 : bit0));*/
-  jshSPISend(device, ((((data>>7)&1) ? bit1 : bit0)<<8) | (((data>>6)&1) ? bit1 : bit0));
-  jshSPISend(device, ((((data>>5)&1) ? bit1 : bit0)<<8) | (((data>>4)&1) ? bit1 : bit0));
-  jshSPISend(device, ((((data>>3)&1) ? bit1 : bit0)<<8) | (((data>>2)&1) ? bit1 : bit0));
-  jshSPISend(device, ((((data>>1)&1) ? bit1 : bit0)<<8) | (((data>>0)&1) ? bit1 : bit0));
+  unsigned char spiData[] = {
+      ((data>>7)&1) ? bit1 : bit0, ((data>>6)&1) ? bit1 : bit0,
+      ((data>>5)&1) ? bit1 : bit0, ((data>>4)&1) ? bit1 : bit0,
+      ((data>>3)&1) ? bit1 : bit0, ((data>>2)&1) ? bit1 : bit0,
+      ((data>>1)&1) ? bit1 : bit0, ((data>>0)&1) ? bit1 : bit0,
+  };
+  jshSPISend(device, spiData, sizeof(spiData), false/* no recv*/);
 }
 
 /*JSON{ "type":"method", "class": "SPI", "name" : "send4bit",

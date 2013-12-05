@@ -192,9 +192,9 @@ void jshUSARTSetup(IOEventFlags device, JshUSARTInfo *inf) {
 
 /** Kick a device into action (if required). For instance we may need
  * to set up interrupts */
-void jshUSARTKick(IOEventFlags device) {
+void jshKickDevice(IOEventFlags device) {
    int c;
-   while ((c = jshGetCharToTransmit(EV_SERIAL1)) >= 0) {
+   while ((c = jshGetCharToTransmit(EV_SERIAL1, 0)) >= 0) {
       Serial.write((char)c);
       Serial.print(":");
    }  
@@ -203,20 +203,16 @@ void jshUSARTKick(IOEventFlags device) {
 void jshSPISetup(IOEventFlags device, JshSPIInfo *inf) {
 }
 
-/** Send data through the given SPI device (if data>=0), and return the result
- * of the previous send (or -1). If data<0, no data is sent and the function
- * waits for data to be returned */
-int jshSPISend(IOEventFlags device, int data) {
-}
-
-/** Send 16 bit data through the given SPI device. */
-void jshSPISend16(IOEventFlags device, int data) {
-  jshSPISend(device, data>>8);
-  jshSPISend(device, data&255);
-}
-
 /** Set whether to send 16 bits or 8 over SPI */
 void jshSPISet16(IOEventFlags device, bool is16) {
+}
+
+/** Send data through the given SPI device. receiveData determines whether received data should be stored */
+void jshSPISend(IOEventFlags device, unsigned char *data, int count, bool receiveData) {
+}
+
+/** Wait until all SPI data has been sent */
+void jshSPIWait(IOEventFlags device) {
 }
 
 void jshI2CSetup(IOEventFlags device, JshI2CInfo *inf) {

@@ -17,6 +17,8 @@
 #include "jsutils.h"
 #include "platform_config.h"
 
+#define IOEVENT_MAXCHARS 8
+
 typedef enum {
  // device type
  EV_NONE,
@@ -57,7 +59,7 @@ typedef enum {
  // EV_DEVICE_MAX should not be >64 - see DEVICE_INITIALISED_FLAGS
  // Also helps if we're under 32 so we can fit IOEventFlags into a byte
  EV_TYPE_MASK = NEXT_POWER_2(EV_DEVICE_MAX) - 1,
- EV_CHARS_MASK = 7 * NEXT_POWER_2(EV_DEVICE_MAX),
+ EV_CHARS_MASK = (IOEVENT_MAXCHARS-1) * NEXT_POWER_2(EV_DEVICE_MAX),
  // -----------------------------------------
  // if the pin we're watching is high, the handler sets this
  EV_EXTI_IS_HIGH = NEXT_POWER_2(EV_DEVICE_MAX),
@@ -71,7 +73,7 @@ typedef enum {
 #define IOEVENTFLAGS_GETTYPE(X) ((X)&EV_TYPE_MASK)
 #define IOEVENTFLAGS_GETCHARS(X) ((((X)&EV_CHARS_MASK)>>5)+1)
 #define IOEVENTFLAGS_SETCHARS(X,CHARS) ((X)=(((X)&(IOEventFlags)~EV_CHARS_MASK) | (((CHARS)-1)<<5)))
-#define IOEVENT_MAXCHARS 8
+
 
 typedef union {
   JsSysTime time; // time event occurred
@@ -89,12 +91,16 @@ void jshPushIOWatchEvent(IOEventFlags channel); // push an even when a pin chang
 /// Push a single character event (for example USART RX)
 void jshPushIOCharEvent(IOEventFlags channel, char charData);
 /// Push many character events at once (for example USB RX)
-static void jshPushIOCharEvents(IOEventFlags channel, char *data, unsigned int count) {
+static inline void jshPushIOCharEvents(IOEventFlags channel, char *data, unsigned int count) {
   // TODO: optimise me!
   unsigned int i;
   for (i=0;i<count;i++) jshPushIOCharEvent(channel, data[i]);
 }
-bool jshPopIOEvent(IOEvent *result); ///< returns true on success
+
+/// returns true on success
+bool jshPopIOEvent(IOEvent *result);
+// returns true on success
+bool jshPopIOEventFor(IOEventFlags eventType, IOEvent *result);
 /// Do we have any events pending? Will jshPopIOEvent return true?
 bool jshHasEvents();
 
@@ -111,14 +117,22 @@ IOEventFlags jshFromDeviceString(const char *device);
 //                                                         DATA TRANSMIT BUFFER
 /// Queue a character for transmission
 void jshTransmit(IOEventFlags device, unsigned char data);
+static inline void jshTransmitMultiple(IOEventFlags device, unsigned char *data, unsigned int count) {
+  unsigned int i;
+  for (i=0;i<count;i++) jshTransmit(device, data[i]);
+}
 /// Wait for transmit to finish
 void jshTransmitFlush();
 /// Clear everything from a device
 void jshTransmitClearDevice(IOEventFlags device);
-/// Do we have anything we need to send?
+/// Do we have anything we need to send? (fast)
 bool jshHasTransmitData();
-/// Try and get a character for transmission - could just return -1 if nothing
-int jshGetCharToTransmit(IOEventFlags device);
+/// Do we have anything on the given device we need to send? (slowish)
+bool jshHasTransmitDataOnDevice(IOEventFlags device);
+/** Try and get a character for transmission - could just return -1 if nothing.
+ * If deviceFlags!=0, it will be set to the flags that were in the event
+ * queue (which could contain additional useful info) */
+int jshGetCharToTransmit(IOEventFlags device, IOEventFlags *deviceFlags);
 
 
 /// Set whether the host should transmit or not

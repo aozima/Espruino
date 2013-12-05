@@ -45,6 +45,7 @@
 #endif
 #endif
 #include "jshardware.h"
+#include "jshardware_stm32.h"
 
 /* Private typedef -----------------------------------------------------------*/
 /* Private define ------------------------------------------------------------*/
@@ -265,7 +266,7 @@ static inline void USART_IRQHandler(USART_TypeDef *USART, IOEventFlags device) {
    }
    if(USART_GetITStatus(USART, USART_IT_TXE) != RESET) {
      /* If we have other data to send, send it */
-     int c = jshGetCharToTransmit(device);
+     int c = jshGetCharToTransmit(device, 0);
      if (c >= 0) {
        USART_SendData(USART, c);
      } else
@@ -293,9 +294,45 @@ void UART5_IRQHandler(void) {
   USART_IRQHandler(UART5, EV_SERIAL5);
 }
 
-#ifdef STM32F4
+#if USARTS>=6
 void USART6_IRQHandler(void) {
   USART_IRQHandler(USART6, EV_SERIAL6);
+}
+#endif
+
+static inline void SPI_IRQHandler(SPI_TypeDef *SPI, IOEventFlags device) {
+  if(SPI_I2S_GetITStatus(SPI, SPI_I2S_IT_RXNE) != RESET) {
+     // Read one byte/word from the receive data register
+     uint16_t c = SPI_I2S_ReceiveData(SPI);
+     // only put it in the RX queue if we need to
+     if (jshSPIGetFlag(device,JSH_SPI_CONFIG_RECEIVE_DATA))
+       jshPushIOCharEvent(device, c);
+   }
+   if(SPI_I2S_GetITStatus(SPI, SPI_I2S_IT_TXE) != RESET) {
+     /* If we have other data to send, send it */
+     int c = jshGetCharToTransmit(device, 0);
+     if (c >= 0) {
+       SPI_I2S_SendData(SPI, c);
+     } else
+       SPI_ITConfig(SPI, SPI_I2S_IT_TXE, DISABLE);
+   }
+}
+
+#if SPIS>=1
+void SPI1_IRQHandler(void) {
+  SPI_IRQHandler(SPI1, EV_SPI1);
+}
+#endif
+
+#if SPIS>=2
+void SPI2_IRQHandler(void) {
+  SPI_IRQHandler(SPI2, EV_SPI2);
+}
+#endif
+
+#if SPIS>=3
+void SPI3_IRQHandler(void) {
+  SPI_IRQHandler(SPI3, EV_SPI3);
 }
 #endif
 

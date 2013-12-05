@@ -45,7 +45,7 @@ void mbedSerialIRQ(uint32_t id, SerialIrq event) {
       jshPushIOCharEvent(device, (char)serial_getc(&mbedSerial[id]));
   }
   if (event == TxIrq) {
-    int c = jshGetCharToTransmit(device);
+    int c = jshGetCharToTransmit(device, 0);
     if (c >= 0) {
       serial_putc(&mbedSerial[id], c);
     } else
@@ -216,9 +216,9 @@ void jshUSARTSetup(IOEventFlags device, JshUSARTInfo *inf) {
 
 /** Kick a device into action (if required). For instance we may need
  * to set up interrupts */
-void jshUSARTKick(IOEventFlags device) {
+void jshKickDevice(IOEventFlags device) {
   int id = 0; // TODO: device
-  int c = jshGetCharToTransmit(device);
+  int c = jshGetCharToTransmit(device, 0);
   if (c >= 0) {
     serial_irq_set(&mbedSerial[id], TxIrq, 1);
     serial_putc(&mbedSerial[id], c);

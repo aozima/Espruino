@@ -11,26 +11,24 @@
  * Platform Specific part of Hardware interface Layer
  * ----------------------------------------------------------------------------
  */
-#ifdef USB
- #ifdef STM32F1
-  #include "usb_utils.h"
-  #include "usb_lib.h"
-  #include "usb_conf.h"
-  #include "usb_pwr.h"
- #endif
-#endif
 #if USE_FILESYSTEM
 #include "diskio.h"
 #endif
 
 #include "jshardware.h"
 #include "jshardware_pininfo.h"
+#include "jshardware_stm32.h"
 #include "jsutils.h"
 #include "jsparse.h"
 #include "jsinteractive.h"
 
+// ----------------- Decls for jshardware_stm32.h
+JSH_SPI_FLAGS jshSPIFlags[SPIS];
+// ----------------------------------------------
+
 #define IRQ_PRIOR_MASSIVE 0
 #define IRQ_PRIOR_USART 6 // a little higher so we don't get lockups of something tries to print
+#define IRQ_PRIOR_SPI 7
 #define IRQ_PRIOR_MED 7
 #define IRQ_PRIOR_LOW 15
 
@@ -68,21 +66,6 @@ unsigned long long jshPinStateIsManual = 0;
 
 // ----------------------------------------------------------------------------
 //                                                                        PINS
-#if defined(STM32F3)
-// stupid renamed stuff
-#define EXTI2_IRQn EXTI2_TS_IRQn
-#define GPIO_Mode_AIN GPIO_Mode_AN
-// see _gpio.h
-#define GPIO_AF_USART1 GPIO_AF_7
-#define GPIO_AF_USART2 GPIO_AF_7
-#define GPIO_AF_USART3 GPIO_AF_7
-#define GPIO_AF_UART4 GPIO_AF_5
-#define GPIO_AF_UART5 GPIO_AF_5
-#define GPIO_AF_USART6 GPIO_AF_0 // FIXME is this right?
-#define GPIO_AF_SPI1 GPIO_AF_5
-#define GPIO_AF_SPI2 GPIO_AF_5
-#endif
-
 
 
 uint8_t pinToEVEXTI(Pin ipin) {
@@ -1500,7 +1483,6 @@ Pin findPinForFunction(JshPinFunction functionType, JshPinFunction functionInfo)
 void jshUSARTSetup(IOEventFlags device, JshUSARTInfo *inf) {
   USART_TypeDef *USARTx;
   JshPinFunction funcType;
-  uint8_t usartIRQ;
 
   jshSetDeviceInitialised(device, true);
 
@@ -1534,29 +1516,23 @@ void jshUSARTSetup(IOEventFlags device, JshUSARTInfo *inf) {
     jsiConsolePrint("UART Init ");jsiConsolePrintInt(inf->baudRate);jsiConsolePrint(", ");jsiConsolePrintInt(inf->pinRX);jsiConsolePrint(", ");jsiConsolePrintInt(inf->pinTX);jsiConsolePrint("\n");
   }*/
 
-  if (device == EV_SERIAL1) {
-    usartIRQ = USART1_IRQn;
-  } else if (device == EV_SERIAL2) {
-    usartIRQ = USART2_IRQn;
+  uint8_t usartIRQ;
+  switch (device) {
+    case EV_SERIAL1: usartIRQ = USART1_IRQn; break;
+    case EV_SERIAL2: usartIRQ = USART2_IRQn; break;
 #if USARTS>= 3
-  } else if (device == EV_SERIAL3) {
-    usartIRQ = USART3_IRQn;
+    case EV_SERIAL3: usartIRQ = USART3_IRQn; break;
 #endif
 #if USARTS>= 4
-  } else if (device == EV_SERIAL4) {
-    usartIRQ = UART4_IRQn;
+    case EV_SERIAL4: usartIRQ = UART4_IRQn; break;
 #endif
 #if USARTS>= 5
-  } else if (device == EV_SERIAL5) {
-    usartIRQ = UART5_IRQn;
+    case EV_SERIAL5: usartIRQ = UART5_IRQn; break;
 #endif
 #if USARTS>= 6
-  } else if (device == EV_SERIAL6) {
-    usartIRQ = USART6_IRQn;
+    case EV_SERIAL6: usartIRQ = USART6_IRQn; break;
 #endif
-  } else {
-    jsError("INTERNAL: Unknown serial port device.");
-    return;
+    default: assert(0); break;
   }
 
   setDeviceClockCmd(device, ENABLE);
@@ -1640,15 +1616,25 @@ void jshUSARTSetup(IOEventFlags device, JshUSARTInfo *inf) {
 
 /** Kick a device into action (if required). For instance we may need
  * to set up interrupts */
-void jshUSARTKick(IOEventFlags device) {
+void jshKickDevice(IOEventFlags device) {
   USART_TypeDef *uart = getUsartFromDevice(device);
-  if (uart && !jshIsDeviceInitialised(device)) {
-    JshUSARTInfo inf;
-    jshUSARTInitInfo(&inf);
-    jshUSARTSetup(device, &inf);
+  if (uart) {
+    if (!jshIsDeviceInitialised(device)) {
+      JshUSARTInfo inf;
+      jshUSARTInitInfo(&inf);
+      jshUSARTSetup(device, &inf);
+    }
+    USART_ITConfig(uart, USART_IT_TXE, ENABLE);
   }
-
-  if (uart) USART_ITConfig(uart, USART_IT_TXE, ENABLE);
+  SPI_TypeDef *spi = getSPIFromDevice(device);
+  if (spi) {
+    if (!jshIsDeviceInitialised(device)) {
+      JshSPIInfo inf;
+      jshSPIInitInfo(&inf);
+      jshSPISetup(device, &inf);
+    }
+    SPI_ITConfig(spi, SPI_I2S_IT_TXE, ENABLE);
+  }
 }
 
 /** Set up SPI, if pins are -1 they will be guessed */
@@ -1682,6 +1668,16 @@ void jshSPISetup(IOEventFlags device, JshSPIInfo *inf) {
   if (inf->pinSCK>=0) jshPinSetFunction(inf->pinSCK, pinSCKfunc);
   if (inf->pinMISO>=0) jshPinSetFunction(inf->pinMISO, pinMISOfunc);
   if (inf->pinMOSI>=0) jshPinSetFunction(inf->pinMOSI, pinMOSIfunc);
+
+  uint8_t spiIRQ;
+  switch (device) {
+    case EV_SPI1: spiIRQ = SPI1_IRQn; break;
+    case EV_SPI2: spiIRQ = SPI2_IRQn; break;
+#if SPIS>= 3
+    case EV_SPI3: spiIRQ = SPI3_IRQn; break;
+#endif
+    default: assert(0); break;
+  }
 
   setDeviceClockCmd(device, ENABLE);
 
@@ -1719,91 +1715,64 @@ void jshSPISetup(IOEventFlags device, JshSPIInfo *inf) {
     //jsiConsolePrint("\n");
   }
 
+  // Enable SPI interrupt
+  NVIC_InitTypeDef NVIC_InitStructure;
+  NVIC_InitStructure.NVIC_IRQChannel = spiIRQ;
+  NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = IRQ_PRIOR_SPI;
+  NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0;
+  NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
+  NVIC_Init( &NVIC_InitStructure );
+
+  // Enable RX interrupt (TX is done when we have bytes)
+  SPI_I2S_ITConfig(SPI, SPI_I2S_IT_RXNE, ENABLE);
+
+
   /* Enable SPI  */
   SPI_Init(SPI, &SPI_InitStructure);
   SPI_Cmd(SPI, ENABLE);
 }
 
-/** Send data through the given SPI device (if data>=0), and return the result
- * of the previous send (or -1). If data<0, no data is sent and the function
- * waits for data to be returned */
-int jshSPISend(IOEventFlags device, int data)
-{
-  SPI_TypeDef *SPI = getSPIFromDevice(device);
-
-  int returnData = -1;
-
-  /** We need hundreds of checks here, because - especially on the HY boards,
-   * at some very specific baud rates we can end up losing bytes. */
-
-  // check for returned data
-  if (SPI_I2S_GetFlagStatus(SPI, SPI_I2S_FLAG_RXNE) != RESET)
-#ifdef STM32F3
-    returnData = (uint16_t)SPI_I2S_ReceiveData16(SPI);
-#else
-    returnData = (uint16_t)SPI_I2S_ReceiveData(SPI);
-#endif
-
-  /* Loop while DR register in not empty */
-  WAIT_UNTIL(SPI_I2S_GetFlagStatus(SPI, SPI_I2S_FLAG_TXE) != RESET, "SPI TX");
-
-  // check for returned data
-  if (returnData==-1 && SPI_I2S_GetFlagStatus(SPI, SPI_I2S_FLAG_RXNE) != RESET)
-#ifdef STM32F3
-    returnData = (uint16_t)SPI_I2S_ReceiveData16(SPI);
-#else
-    returnData = (uint16_t)SPI_I2S_ReceiveData(SPI);
-#endif
-
-  if (data >= 0) {
-    /* Send a Byte through the SPI peripheral */
-#ifdef STM32F3
-    SPI_I2S_SendData16(SPI, (uint16_t)data); // I guess this is ok if we're just in 8 bit mode?
-#else
-    SPI_I2S_SendData(SPI, (uint16_t)data);
-#endif
-  } else if (returnData==-1) {
-    // we were actually waiting for a byte to receive - let's hope we get it!
-    WAIT_UNTIL(SPI_I2S_GetFlagStatus(SPI, SPI_I2S_FLAG_RXNE) != RESET, "SPI RX");
-  }
-
-  /* Return the Byte read from the SPI bus - or -1 if no byte */
-  if (returnData==-1 && SPI_I2S_GetFlagStatus(SPI, SPI_I2S_FLAG_RXNE) != RESET) {
-#ifdef STM32F3
-    returnData = (uint16_t)SPI_I2S_ReceiveData16(SPI);
-#else
-    returnData = (uint16_t)SPI_I2S_ReceiveData(SPI);
-#endif
-  }
-
-  // TODO: when data=-1, returns just before final clock pulse
-
-  return returnData;
-}
-
-/** Send 16 bit data through the given SPI device. */
-void jshSPISend16(IOEventFlags device, int data)
-{
-  SPI_TypeDef *SPI = getSPIFromDevice(device);
-
-  /* Loop while DR register in not empty */
-  WAIT_UNTIL(SPI_I2S_GetFlagStatus(SPI, SPI_I2S_FLAG_TXE) != RESET, "SPI TX");
-
-  /* Send a Byte through the SPI peripheral */
-#ifdef STM32F3
-    SPI_I2S_SendData16(SPI, (uint16_t)data);
-#else
-    SPI_I2S_SendData(SPI, (uint16_t)data);
-#endif
-}
-
 /** Set whether to send 16 bits or 8 over SPI */
 void jshSPISet16(IOEventFlags device, bool is16) {
+  assert(DEVICE_IS_SPI(device));
   SPI_TypeDef *SPI = getSPIFromDevice(device);
   /* Loop until not sending */
   WAIT_UNTIL(SPI_I2S_GetFlagStatus(SPI, SPI_I2S_FLAG_BSY) != SET, "SPI BSY");
   /* Set the data size */
   SPI_DataSizeConfig(SPI, is16 ? SPI_DataSize_16b : SPI_DataSize_8b);
+}
+
+/** Send data through the given SPI device. receiveData determines whether received data should be stored or thrown away */
+void jshSPISend(IOEventFlags device, unsigned char *data, unsigned int count, bool receiveData) {
+  assert(DEVICE_IS_SPI(device));
+  if (jshSPIGetFlag(device,JSH_SPI_CONFIG_RECEIVE_DATA) != receiveData) {
+    jshSPIWait(device);
+    jshSPISetFlag(device,JSH_SPI_CONFIG_RECEIVE_DATA, receiveData);
+  }
+  jshTransmitMultiple(device, data, count);
+}
+
+/** Receive data from the SPI device (if any is available). Returns the number of characters available. count must be >=IOEVENT_MAXCHARS */
+unsigned int jshSPIReceive(IOEventFlags device, unsigned char *data, unsigned int count) {
+  assert(DEVICE_IS_SPI(device));
+  IOEvent ev;
+  unsigned int bRead = 0;
+  while (((count-bRead)>=IOEVENT_MAXCHARS) && jshPopIOEventFor(device, &ev)) {
+    int i, c = IOEVENTFLAGS_GETCHARS(ev.flags);
+    for (i=0;i<c;i++)
+      data[bRead++] = ev.data.chars[i];
+  }
+  return bRead;
+}
+
+/** Wait until all SPI data has been sent */
+void jshSPIWait(IOEventFlags device) {
+  assert(DEVICE_IS_SPI(device));
+  // Wait until no data left to TX
+  WAIT_UNTIL(!jshHasTransmitDataOnDevice(device), "SPI TX QUEUE");
+  // wait until that has worked its way through the buffer
+  SPI_TypeDef *SPI = getSPIFromDevice(device);
+  WAIT_UNTIL(SPI_I2S_GetFlagStatus(SPI, SPI_I2S_FLAG_BSY) != SET, "SPI BSY");
 }
 
 

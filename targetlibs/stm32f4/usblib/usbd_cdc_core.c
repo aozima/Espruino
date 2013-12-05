@@ -625,7 +625,7 @@ static uint8_t  usbd_cdc_DataIn (void *pdev, uint8_t epnum)
     // try and fill the buffer
     int c;
     while (USB_Tx_length<CDC_DATA_IN_PACKET_SIZE &&
-           ((c = jshGetCharToTransmit(EV_USBSERIAL)) >= 0) ) { // get byte to transmit
+           ((c = jshGetCharToTransmit(EV_USBSERIAL, 0)) >= 0) ) { // get byte to transmit
       USB_TX_Buffer[USB_Tx_length++] = c;
     }
 
@@ -713,7 +713,7 @@ static void Handle_USBAsynchXfer (void *pdev)
     // try and fill the buffer
     int c;
     while (USB_Tx_length<CDC_DATA_IN_PACKET_SIZE &&
-           ((c = jshGetCharToTransmit(EV_USBSERIAL)) >=0) ) { // get byte to transmit
+           ((c = jshGetCharToTransmit(EV_USBSERIAL, 0)) >=0) ) { // get byte to transmit
       USB_TX_Buffer[USB_Tx_length++] = c;
     }
 

@@ -11,6 +11,9 @@
  * Interactive Shell implementation
  * ----------------------------------------------------------------------------
  */
+
+#include <stdarg.h> // for va_args
+
 #include "jsutils.h"
 #include "jsinteractive.h"
 #include "jshardware.h"
@@ -126,6 +129,27 @@ void jsiConsolePrint(const char *str) {
        if (*str == '\n') jsiConsolePrintChar('\r');
        jsiConsolePrintChar(*(str++));
   }
+}
+
+void jsiConsolePrintf(const char *fmt, ...) {
+  va_list argp;
+  va_start(argp, fmt);
+
+  while (*fmt) {
+    if (*fmt == '%') {
+      fmt++;
+      switch (*fmt++) {
+      case 'd': jsiConsolePrintInt(va_arg(argp, int)); break;
+      case 's': jsiConsolePrint(va_arg(argp, char *)); break;
+      default: assert(0); return; // eep
+      }
+      jsiConsolePrintChar('\r');
+    } else {
+      if (*fmt == '\n') jsiConsolePrintChar('\r');
+      jsiConsolePrintChar(*(fmt++));
+    }
+  }
+  va_end(argp);
 }
 
 void jsiConsolePrintInt(JsVarInt d) {

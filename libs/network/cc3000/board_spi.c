@@ -216,28 +216,26 @@ cc3000_spi_write(unsigned char *pUserBuffer, unsigned short usLength)
 void
 SpiWriteDataSynchronous(unsigned char *data, unsigned short size)
 {
-  int bSend = 0, bRecv = 0;
-  while (bSend<size || bRecv<size) {
-    int r = jshSPISend(WLAN_SPI, (bSend<size)?data[bSend]:-1);
-    bSend++;
-    if (bSend>0 && r>=0) bRecv++;
-  }
-
-  jshDelayMicroseconds(10); // because of final clock pulse
+  jshSPISend(WLAN_SPI, data, size, false); // no receive data
+  jshSPIWait(WLAN_SPI);
 }
 
 
 void
 SpiReadDataSynchronous(unsigned char *data, unsigned short size)
 {
+
   int bSend = 0, bRecv = 0;
   while (bSend<size || bRecv<size) {
-    int r = jshSPISend(WLAN_SPI, (bSend<size)?READ:-1);
-    bSend++;
-    if (bSend>0 && r>=0) data[bRecv++] = r;
+    if (bSend < size) {
+      unsigned char d = READ;
+      jshSPISend(WLAN_SPI, &d, 1, true);
+      bSend++;
+    }
+    unsigned char *buf[IOEVENT_MAXCHARS];
+    unsigned int i, c = jshSPIReceive(WLAN_SPI, buf, sizeof(buf));
+    for (i=0;i<c;i++) data[bRecv++] = buf[c];
   }
-  jshDelayMicroseconds(10); // because of final clock pulse
-
 }
 
 void
