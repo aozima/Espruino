@@ -301,21 +301,24 @@ void USART6_IRQHandler(void) {
 #endif
 
 static inline void SPI_IRQHandler(SPI_TypeDef *SPI, IOEventFlags device) {
-  while (SPI_I2S_GetITStatus(SPI, SPI_I2S_IT_RXNE) != RESET) {
-     // Read one byte/word from the receive data register
-     uint16_t c = SPI_I2S_ReceiveData(SPI);
-     // only put it in the RX queue if we need to
-     if (jshSPIGetFlag(device,JSH_SPI_CONFIG_RECEIVE_DATA))
-       jshPushIOCharEvent(device, (char)c);
-   }
    if(SPI_I2S_GetITStatus(SPI, SPI_I2S_IT_TXE) != RESET) {
      /* If we have other data to send, send it */
-     int c = jshGetCharToTransmit(device, 0);
+     int c = jshSPIGetFlag(device,JSH_SPI_CONFIG_16_BIT) ?
+         jshGetShortToTransmit(device, 0) :
+         jshGetCharToTransmit(device, 0);
      if (c >= 0) {
        SPI_I2S_SendData(SPI, (uint16_t)c);
-     } else
+     } else {
        SPI_I2S_ITConfig(SPI, SPI_I2S_IT_TXE, DISABLE);
+     }
    }
+   while (SPI_I2S_GetITStatus(SPI, SPI_I2S_IT_RXNE) != RESET) {
+      // Read one byte/word from the receive data register
+      uint16_t c = SPI_I2S_ReceiveData(SPI);
+      // only put it in the RX queue if we need to
+      if (jshSPIGetFlag(device,JSH_SPI_CONFIG_RECEIVE_DATA))
+        jshPushIOCharEvent(device, (char)c);
+    }
 }
 
 #if SPIS>=1

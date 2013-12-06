@@ -1751,9 +1751,11 @@ void jshSPISet16(IOEventFlags device, bool is16) {
   assert(DEVICE_IS_SPI(device));
   SPI_TypeDef *SPI = getSPIFromDevice(device);
   /* Loop until not sending */
-  WAIT_UNTIL(SPI_I2S_GetFlagStatus(SPI, SPI_I2S_FLAG_BSY) != SET, "SPI BSY");
+  jshSPIWait(device);
   /* Set the data size */
   SPI_DataSizeConfig(SPI, is16 ? SPI_DataSize_16b : SPI_DataSize_8b);
+
+  jshSPISetFlag(device, JSH_SPI_CONFIG_16_BIT, is16);
 }
 
 /** Send data through the given SPI device. receiveData determines whether received data should be stored or thrown away */
@@ -1762,6 +1764,7 @@ void jshSPISend(IOEventFlags device, unsigned char *data, unsigned int count, bo
   if (jshSPIGetFlag(device,JSH_SPI_CONFIG_RECEIVE_DATA) != receiveData) {
     jshSPIWait(device);
     jshSPISetFlag(device,JSH_SPI_CONFIG_RECEIVE_DATA, receiveData);
+    SPI_I2S_ITConfig(getSPIFromDevice(device), SPI_I2S_IT_RXNE, receiveData ? ENABLE : DISABLE);
   }
   jshTransmitMultiple(device, data, count);
 }

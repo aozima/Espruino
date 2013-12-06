@@ -41,20 +41,22 @@
 typedef enum {
   JSH_SPI_CONFIG_NONE = 0,
   JSH_SPI_CONFIG_RECEIVE_DATA = 1,
+  JSH_SPI_CONFIG_16_BIT = 2, // 16 bit send - receive not implemented at the moment
 } PACKED_FLAGS JSH_SPI_FLAGS;
 extern JSH_SPI_FLAGS jshSPIFlags[SPIS];
 
 static inline bool jshSPIGetFlag(IOEventFlags device, JSH_SPI_FLAGS flag) {
   assert(DEVICE_IS_SPI(device));
-  return (jshSPIFlags[device - EV_SPI1]&flag) != 0;
+  return (jshSPIFlags[device - EV_SPI1] & flag) != 0;
 }
 
 static inline void jshSPISetFlag(IOEventFlags device, JSH_SPI_FLAGS flag, bool state) {
   assert(DEVICE_IS_SPI(device));
+  JSH_SPI_FLAGS *f = &jshSPIFlags[device - EV_SPI1];
   if (state)
-    jshSPIFlags[device - EV_SPI1] |= flag;
+    *f = (JSH_SPI_FLAGS)(*f | flag);
   else
-    jshSPIFlags[device - EV_SPI1] &= ~flag;
+    *f = (JSH_SPI_FLAGS)(*f & ~flag);
 }
 
 #endif // JSHARDWARE_STM32_H_

@@ -117,10 +117,7 @@ IOEventFlags jshFromDeviceString(const char *device);
 //                                                         DATA TRANSMIT BUFFER
 /// Queue a character for transmission
 void jshTransmit(IOEventFlags device, unsigned char data);
-static inline void jshTransmitMultiple(IOEventFlags device, unsigned char *data, unsigned int count) {
-  unsigned int i;
-  for (i=0;i<count;i++) jshTransmit(device, data[i]);
-}
+void jshTransmitMultiple(IOEventFlags device, unsigned char *data, unsigned int count);
 /// Wait for transmit to finish
 void jshTransmitFlush();
 /// Clear everything from a device
@@ -133,6 +130,9 @@ bool jshHasTransmitDataOnDevice(IOEventFlags device);
  * If deviceFlags!=0, it will be set to the flags that were in the event
  * queue (which could contain additional useful info) */
 int jshGetCharToTransmit(IOEventFlags device, IOEventFlags *deviceFlags);
+/** Try and get a short (16 bits) for transmission - could just return -1 if nothing.
+ * This should be run IN AN INTERRUPT */
+int jshGetShortToTransmit(IOEventFlags device, IOEventFlags *deviceFlags);
 
 
 /// Set whether the host should transmit or not

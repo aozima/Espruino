@@ -38,6 +38,11 @@ volatile unsigned char txHead=0, txTail=0;
 
 // Queue a character for transmission
 void jshTransmit(IOEventFlags device, unsigned char data) {
+  jshTransmitMultiple(device, &data, 1);
+}
+
+void jshTransmitMultiple(IOEventFlags device, unsigned char *data, unsigned int count) {
+  unsigned int i;
 #ifndef LINUX
 #ifdef USB
   if (device==EV_USBSERIAL && !jshIsUSBSERIALConnected()) {
@@ -47,26 +52,29 @@ void jshTransmit(IOEventFlags device, unsigned char data) {
 #endif
   if (device==EV_NONE) return;
   unsigned char txHeadNext = (txHead+1)&TXBUFFERMASK;
-  if (txHeadNext==txTail) {
-    jsiSetBusy(BUSY_TRANSMIT, true);
-    while (txHeadNext==txTail) {
-      // wait for send to finish as buffer is about to overflow
-#ifdef USB
-      // just in case USB was unplugged while we were waiting!
-      if (!jshIsUSBSERIALConnected()) jshTransmitClearDevice(EV_USBSERIAL);
-#endif
+  for (i=0;i<count;i++) {
+    if (txHeadNext==txTail) {
+      jsiSetBusy(BUSY_TRANSMIT, true);
+      while (txHeadNext==txTail) {
+        // wait for send to finish as buffer is about to overflow
+  #ifdef USB
+        // just in case USB was unplugged while we were waiting!
+        if (!jshIsUSBSERIALConnected()) jshTransmitClearDevice(EV_USBSERIAL);
+  #endif
+      }
+      jsiSetBusy(BUSY_TRANSMIT, false);
     }
-    jsiSetBusy(BUSY_TRANSMIT, false);
+    txBuffer[txHead].flags = device;
+    txBuffer[txHead].data = (char)data[i];
+    txHead = txHeadNext;
+    txHeadNext = (txHeadNext+1)&TXBUFFERMASK;
   }
-  txBuffer[txHead].flags = device;
-  txBuffer[txHead].data = (char)data;
-  txHead = txHeadNext;
 
   jshKickDevice(device); // set up interrupts if required
 
 #else // if PC, just put to stdout
   if (device==DEFAULT_CONSOLE_DEVICE) {
-    fputc(data, stdout);
+    for (i=0;i<count;i++) fputc(data[i], stdout);
     fflush(stdout);
   }
 #endif
@@ -94,6 +102,36 @@ int jshGetCharToTransmit(IOEventFlags device, IOEventFlags *deviceFlags) {
       return data; // return data
     }
     ptr = (unsigned char)((ptr+1)&TXBUFFERMASK);
+  }
+  return -1; // no data :(
+}
+
+/** Try and get a short (16 bits) for transmission - could just return -1 if nothing.
+ * This should be run IN AN INTERRUPT */
+int jshGetShortToTransmit(IOEventFlags device, IOEventFlags *deviceFlags) {
+  unsigned char ptr = txTail;
+  unsigned char ptr2 = (unsigned char)((ptr+1)&TXBUFFERMASK);
+  if (txHead==ptr) return -1;
+  while (txHead != ptr2) {
+    if (IOEVENTFLAGS_GETTYPE(txBuffer[ptr].flags) == device &&
+        IOEVENTFLAGS_GETTYPE(txBuffer[ptr2].flags) == device) {
+      if (deviceFlags) *deviceFlags = txBuffer[ptr].flags;
+      unsigned short data = (txBuffer[ptr].data<<8) | txBuffer[ptr2].data;
+      if (ptr != txTail) { // so we weren't right at the back of the queue
+        // we need to work back from ptr (until we hit tail), shifting everything forwards
+        unsigned char this = ptr;
+        unsigned char last = (unsigned char)((this+TXBUFFERMASK-1)&TXBUFFERMASK);
+        while (this!=txTail) { // if this==txTail, then last is before it, so stop here
+          txBuffer[this] = txBuffer[last];
+          this = (unsigned char)((this+TXBUFFERMASK)&TXBUFFERMASK);
+          last = (unsigned char)((last+TXBUFFERMASK)&TXBUFFERMASK);
+        }
+      }
+      txTail = (unsigned char)((txTail+2)&TXBUFFERMASK); // advance the tail
+      return data; // return data
+    }
+    ptr = ptr2;
+    ptr2 = (unsigned char)((ptr2+1)&TXBUFFERMASK);
   }
   return -1; // no data :(
 }
