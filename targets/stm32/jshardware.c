@@ -11,6 +11,14 @@
  * Platform Specific part of Hardware interface Layer
  * ----------------------------------------------------------------------------
  */
+#ifdef USB
+ #ifdef STM32F1
+  #include "usb_utils.h"
+  #include "usb_lib.h"
+  #include "usb_conf.h"
+  #include "usb_pwr.h"
+ #endif
+#endif
 #if USE_FILESYSTEM
 #include "diskio.h"
 #endif
@@ -1639,7 +1647,7 @@ void jshKickDevice(IOEventFlags device) {
       jshSPIInitInfo(&inf);
       jshSPISetup(device, &inf);
     }
-    SPI_ITConfig(spi, SPI_I2S_IT_TXE, ENABLE);
+    SPI_I2S_ITConfig(spi, SPI_I2S_IT_TXE, ENABLE);
   }
 }
 

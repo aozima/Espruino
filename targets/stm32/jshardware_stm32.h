@@ -18,15 +18,6 @@
 
 #include "platform_config.h"
 
-#ifdef USB
- #ifdef STM32F1
-  #include "usb_utils.h"
-  #include "usb_lib.h"
-  #include "usb_conf.h"
-  #include "usb_pwr.h"
- #endif
-#endif
-
 #if defined(STM32F3)
 // stupid renamed stuff
 #define EXTI2_IRQn EXTI2_TS_IRQn
@@ -55,15 +46,15 @@ extern JSH_SPI_FLAGS jshSPIFlags[SPIS];
 
 static inline bool jshSPIGetFlag(IOEventFlags device, JSH_SPI_FLAGS flag) {
   assert(DEVICE_IS_SPI(device));
-  return (jshSPIFlags[device - JSH_SPI1]&flag) != 0;
+  return (jshSPIFlags[device - EV_SPI1]&flag) != 0;
 }
 
 static inline void jshSPISetFlag(IOEventFlags device, JSH_SPI_FLAGS flag, bool state) {
   assert(DEVICE_IS_SPI(device));
   if (state)
-    jshSPIFlags[device - JSH_SPI1] |= flag;
+    jshSPIFlags[device - EV_SPI1] |= flag;
   else
-    jshSPIFlags[device - JSH_SPI1] &= ~flag;
+    jshSPIFlags[device - EV_SPI1] &= ~flag;
 }
 
 #endif // JSHARDWARE_STM32_H_

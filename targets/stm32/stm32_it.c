@@ -257,7 +257,7 @@ static inline void USART_IRQHandler(USART_TypeDef *USART, IOEventFlags device) {
      /* Clear the USART Receive interrupt */
      USART_ClearITPendingBit(USART, USART_IT_RXNE);
      /* Read one byte from the receive data register */
-     jshPushIOCharEvent(device, USART_ReceiveData(USART));
+     jshPushIOCharEvent(device, (char)USART_ReceiveData(USART));
    }
    /* If overrun condition occurs, clear the ORE flag and recover communication */
    if (USART_GetFlagStatus(USART, USART_FLAG_ORE) != RESET)
@@ -268,7 +268,7 @@ static inline void USART_IRQHandler(USART_TypeDef *USART, IOEventFlags device) {
      /* If we have other data to send, send it */
      int c = jshGetCharToTransmit(device, 0);
      if (c >= 0) {
-       USART_SendData(USART, c);
+       USART_SendData(USART, (uint16_t)c);
      } else
        USART_ITConfig(USART, USART_IT_TXE, DISABLE);
    }
@@ -306,15 +306,15 @@ static inline void SPI_IRQHandler(SPI_TypeDef *SPI, IOEventFlags device) {
      uint16_t c = SPI_I2S_ReceiveData(SPI);
      // only put it in the RX queue if we need to
      if (jshSPIGetFlag(device,JSH_SPI_CONFIG_RECEIVE_DATA))
-       jshPushIOCharEvent(device, c);
+       jshPushIOCharEvent(device, (char)c);
    }
    if(SPI_I2S_GetITStatus(SPI, SPI_I2S_IT_TXE) != RESET) {
      /* If we have other data to send, send it */
      int c = jshGetCharToTransmit(device, 0);
      if (c >= 0) {
-       SPI_I2S_SendData(SPI, c);
+       SPI_I2S_SendData(SPI, (uint16_t)c);
      } else
-       SPI_ITConfig(SPI, SPI_I2S_IT_TXE, DISABLE);
+       SPI_I2S_ITConfig(SPI, SPI_I2S_IT_TXE, DISABLE);
    }
 }
 
