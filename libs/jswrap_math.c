@@ -22,18 +22,6 @@
 
 // -------------------------------------------------------------------- Integer
 /*JSON{ "type":"staticmethod",
-         "class" : "Integer", "name" : "parseInt",
-         "generate" : "jswrap_integer_stringToInt",
-         "description" : "Convert a string representing a number into a number",
-         "params" : [ [ "x", "JsVar", "A string to convert to an Integer"] ],
-         "return" : ["int", "The integer value of x"]
-}*/
-JsVarInt jswrap_integer_stringToInt(JsVar *v) {
-  char buffer[JS_NUMBER_BUFFER_SIZE];
-  jsvGetString(v, buffer, JS_NUMBER_BUFFER_SIZE);
-  return stringToInt(buffer);
-}
-/*JSON{ "type":"staticmethod",
          "class" : "Integer", "name" : "valueOf",
          "generate" : "jswrap_integer_valueOf",
          "description" : "Given a string containing a single character, return the numeric value of it",
@@ -45,10 +33,7 @@ JsVarInt jswrap_integer_valueOf(JsVar *v) {
     return 0;
   return (int)v->varData.str[0];
 }
-/*JSON{ "type":"variable", "name" : "NaN",
-         "generate_full" : "(((JsVarFloat)0)/(JsVarFloat)0)",
-         "return" : ["float", "Not a  Number"]
-}*/
+
  // -------------------------------------------------------------------- Double
 /*JSON{ "type":"staticmethod",
          "class" : "Double", "name" : "doubleToIntBits",
@@ -110,9 +95,56 @@ JsVarFloat jswrap_math_abs(JsVarFloat x) {
          "params" : [ [ "theta", "float", "The angle to get the cosine of"] ],
          "return" : ["float", "The cosine of theta"]
 }*/
+
+double fs_fmod(double x, double y)
+{
+  double a, b;
+  const double c = x;
+
+  if (0 > c) {
+    x = -x;
+  }
+  if (0 > y) {
+    y = -y;
+  }
+  if (y != 0 && DBL_MAX >= y && DBL_MAX >= x) {
+    while (x >= y) {
+      a = x / 2;
+      b = y;
+      while (a >= b) {
+        b *= 2;
+      }
+      x -= b;
+    }
+  } else {
+    x = 0;
+  }
+  return 0 > c ? -x : x;
+}
+
+double jswrap_math_pow(double x, double y)
+{
+  double p;
+  if (0 > x && fs_fmod(y, 1) == 0) {
+    if (fs_fmod(y, 2) == 0) {
+      p = exp(log(-x) * y);
+    } else {
+      p = -exp(log(-x) * y);
+    }
+  } else {
+    if (x != 0 || 0 >= y) {
+      p = exp(log( x) * y);
+    } else {
+      p = 0;
+    }
+  }
+  return p;
+}
+
+
 /*JSON{ "type":"staticmethod",
          "class" : "Math", "name" : "pow",
-         "generate" : "pow",
+         "generate" : "jswrap_math_pow",
          "params" : [ [ "x", "float", "The value to raise to the power"],
                       [ "y", "float", "The power x should be raised to"] ],
          "return" : ["float", "x raised to the power y (x^y)"]
@@ -138,7 +170,7 @@ JsVarFloat jswrap_math_abs(JsVarFloat x) {
 /* we could use the real sqrt - but re-use pow to save on code space */
 /*JSON{ "type":"staticmethod",
          "class" : "Math", "name" : "sqrt",
-         "generate_full" : "pow(jsvGetFloat(x),0.5)",
+         "generate_full" : "jswrap_math_pow(jsvGetFloat(x),0.5)",
          "params" : [ [ "x", "float", "The value to take the square root of"] ],
          "return" : ["float", "The square root of x"]
 }*/
@@ -172,7 +204,7 @@ JsVarFloat jswrap_math_abs(JsVarFloat x) {
 /*JSON{ "type":"staticmethod", "ifndef" : "SAVE_ON_FLASH",
          "class" : "Math", "name" : "clip",
          "generate" : "jswrap_math_clip",
-         "description" : "Clip a number to be between min and max (inclusive)",
+         "description" : "DEPRECATED - Please use `E.clip()` instead. Clip a number to be between min and max (inclusive)",
          "params" : [ [ "x", "float", "A floating point value to clip"],
                       [ "min", "float", "The smallest the value should be"],
                       [ "max", "float", "The largest the value should be"] ],

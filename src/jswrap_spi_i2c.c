@@ -63,8 +63,7 @@ JsVar *map_var_as_unsigned_char(JsVar *src, IOEventFlags device, unsigned_char_m
       unsigned char in = (unsigned char)jsvIteratorGetIntegerValue(&it);
       unsigned char out = map(device, in);
       JsVar *outVar = jsvNewFromInteger(out);
-      jsvArrayPush(dst, outVar);
-      jsvUnLock(outVar);
+      jsvArrayPushAndUnLock(dst, outVar);
       jsvIteratorNext(&it);
     }
     jsvIteratorFree(&it);
@@ -135,7 +134,7 @@ JsVar *jswrap_spi_send(JsVar *parent, JsVar *srcdata, Pin nss_pin) {
   JsVar *dst = 0;
 
   // assert NSS
-  if (nss_pin>=0) {
+  if (nss_pin!=PIN_UNDEFINED) {
     jshSPIWait(device);
     jshPinOutput(nss_pin, false);
   }
@@ -150,7 +149,7 @@ JsVar *jswrap_spi_send(JsVar *parent, JsVar *srcdata, Pin nss_pin) {
       dst = jsvNewFromInteger(buf[0]); // retrieve the byte (no send!)
   } else if (jsvIsArray(srcdata)) {
     dst = jsvNewWithFlags(JSV_ARRAY);
-    JsArrayIterator it;
+    JsvArrayIterator it;
     jsvArrayIteratorNew(&it, srcdata);
     int incount = 0, outcount = 0;
     while (jsvArrayIteratorHasElement(&it) || outcount < incount) {
@@ -167,8 +166,7 @@ JsVar *jswrap_spi_send(JsVar *parent, JsVar *srcdata, Pin nss_pin) {
       for (i=0;i<c;i++) {
         outcount++;
         JsVar *outVar = jsvNewFromInteger(buf[i]);
-        jsvArrayPush(dst, outVar);
-        jsvUnLock(outVar);
+        jsvArrayPushAndUnLock(dst, outVar);
       }
     }
     jsvArrayIteratorFree(&it);
@@ -226,7 +224,7 @@ JsVar *jswrap_spi_send(JsVar *parent, JsVar *srcdata, Pin nss_pin) {
   }
 
   // de-assert NSS
-  if (nss_pin>=0) {
+  if (nss_pin!=PIN_UNDEFINED) {
     jshSPIWait(device);
     jshPinOutput(nss_pin, true);
   }
@@ -287,7 +285,7 @@ void jswrap_spi_send4bit(JsVar *parent, JsVar *srcdata, int bit0, int bit1, Pin 
   }
 
   // assert NSS
-  if (nss_pin>=0) {
+  if (nss_pin!=PIN_UNDEFINED) {
     jshSPIWait(device);
     jshPinOutput(nss_pin, false);
   }
@@ -299,6 +297,7 @@ void jswrap_spi_send4bit(JsVar *parent, JsVar *srcdata, int bit0, int bit1, Pin 
     short s = spi_pack4bit((unsigned char)jsvGetInteger(srcdata), bit0, bit1);
     jshSPISend(device, &s, sizeof(short), false);
   } else if (jsvIsIterable(srcdata)) {
+    jshInterruptOff();
     JsvIterator it;
     jsvIteratorNew(&it, srcdata);
     while (jsvIteratorHasElement(&it)) {
@@ -311,13 +310,14 @@ void jswrap_spi_send4bit(JsVar *parent, JsVar *srcdata, int bit0, int bit1, Pin 
       jshSPISend(device, buf, c*sizeof(int), true);
     }
     jsvIteratorFree(&it);
+    jshInterruptOn();
   } else {
     jsError("Variable type not suited to transmit operation");
   }
   jshSPIWait(device);
   jshSPISet16(device, false);
   // de-assert NSS
-  if (nss_pin>=0) {
+  if (nss_pin!=PIN_UNDEFINED) {
      jshSPIWait(device);
      jshPinOutput(nss_pin, true);
   }
@@ -350,7 +350,7 @@ void jswrap_spi_send8bit(JsVar *parent, JsVar *srcdata, int bit0, int bit1, Pin 
   }
 
   // assert NSS
-  if (nss_pin>=0) {
+  if (nss_pin!=PIN_UNDEFINED) {
      jshSPIWait(device);
      jshPinOutput(nss_pin, false);
   }
@@ -361,6 +361,7 @@ void jswrap_spi_send8bit(JsVar *parent, JsVar *srcdata, int bit0, int bit1, Pin 
   if (jsvIsNumeric(srcdata)) {
     spi_send8bit(device, (unsigned char)jsvGetInteger(srcdata), bit0, bit1);
   } else if (jsvIsIterable(srcdata)) {
+    jshInterruptOff();
     JsvIterator it;
     jsvIteratorNew(&it, srcdata);
     while (jsvIteratorHasElement(&it)) {
@@ -369,13 +370,14 @@ void jswrap_spi_send8bit(JsVar *parent, JsVar *srcdata, int bit0, int bit1, Pin 
       jsvIteratorNext(&it);
     }
     jsvIteratorFree(&it);
+    jshInterruptOn();
   } else {
     jsError("Variable type not suited to transmit operation");
   }
   jshSPIWait(device);
   jshSPISet16(device, false);
   // de-assert NSS
-  if (nss_pin>=0) {
+  if (nss_pin!=PIN_UNDEFINED) {
      jshSPIWait(device);
      jshPinOutput(nss_pin, true);
   }
@@ -481,8 +483,7 @@ JsVar *jswrap_i2c_readFrom(JsVar *parent, int address, int nBytes) {
     int i;
     for (i=0;i<nBytes;i++) {
       JsVar *v = jsvNewFromInteger(buf[i]);
-      jsvArrayPush(array, v);
-      jsvUnLock(v);
+      jsvArrayPushAndUnLock(array, v);
     }
   }
   return array;

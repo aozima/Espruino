@@ -25,18 +25,7 @@
 #include "jsutils.h"
 #include "jsparse.h"
 #include "jsinteractive.h"
-
-
-#ifdef CARAMBOLA
-#define SYSFS_GPIO_DIR "/sys/class/gpio"
-#define SYSFS_GPIO_MIN 1
-#define SYSFS_GPIO_MAX 14
-#endif
-#ifdef RASPBERRYPI
-#define SYSFS_GPIO_DIR "/sys/class/gpio"
-#define SYSFS_GPIO_MIN 0
-#define SYSFS_GPIO_MAX 27
-#endif
+#include "jspininfo.h"
 
 // ----------------------------------------------------------------------------
 #ifdef SYSFS_GPIO_DIR
@@ -45,10 +34,10 @@
 #include <unistd.h>
 #include <errno.h>
 
-bool gpioShouldWatch[SYSFS_GPIO_MAX+1]; // whether we should watch this pin for changes
-bool gpioLastState[SYSFS_GPIO_MAX+1]; // the last state of this pin
-JshPinState gpioState[SYSFS_GPIO_MAX+1]; // will be set to UNDEFINED if it isn't exported
-IOEventFlags gpioEventFlags[SYSFS_GPIO_MAX+1];
+bool gpioShouldWatch[JSH_PIN_COUNT]; // whether we should watch this pin for changes
+bool gpioLastState[JSH_PIN_COUNT]; // the last state of this pin
+JshPinState gpioState[JSH_PIN_COUNT]; // will be set to UNDEFINED if it isn't exported
+IOEventFlags gpioEventFlags[JSH_PIN_COUNT];
 
 // functions for accessing the sysfs GPIO
 void sysfs_write(const char *path, const char *data) {
@@ -83,7 +72,7 @@ void sysfs_read(const char *path, char *data, unsigned int len) {
 JsVarInt sysfs_read_int(const char *path) {
   char buf[20];
   sysfs_read(path, buf, sizeof(buf));
-  return stringToIntWithRadix(buf, 10);
+  return stringToIntWithRadix(buf, 10, 0);
 }
 
 // ----------------------------------------------------------------------------
@@ -98,7 +87,7 @@ IOEventFlags getNewEVEXTI() {
     IOEventFlags evFlag = (IOEventFlags)(EV_EXTI0+i);
     Pin pin;
     bool found = false;
-    for (pin=SYSFS_GPIO_MIN;pin<=SYSFS_GPIO_MAX;pin++) 
+    for (pin=0;pin<JSH_PIN_COUNT;pin++)
       if (gpioEventFlags[pin] == evFlag)
         found = true;
     if (!found)
@@ -175,7 +164,7 @@ void jshInit() {
 
 #ifdef SYSFS_GPIO_DIR
   int i;
-  for (i=0;i<=SYSFS_GPIO_MAX;i++) {
+  for (i=0;i<JSH_PIN_COUNT;i++) {
     gpioState[i] = JSHPINSTATE_UNDEFINED;
     gpioShouldWatch[i] = false;
     gpioEventFlags[i] = 0;
@@ -187,7 +176,7 @@ void jshKill() {
 #ifdef SYSFS_GPIO_DIR
   int i;
   // unexport any GPIO that we exported
-  for (i=0;i<=SYSFS_GPIO_MAX;i++)
+  for (i=0;i<JSH_PIN_COUNT;i++)
     if (gpioState[i] != JSHPINSTATE_UNDEFINED)
       sysfs_write_int(SYSFS_GPIO_DIR"/unexport", i);
 #endif
@@ -200,7 +189,7 @@ void jshIdle() {
 
 #ifdef SYSFS_GPIO_DIR
   Pin pin;
-  for (pin=SYSFS_GPIO_MIN;pin<=SYSFS_GPIO_MAX;pin++)
+  for (pin=0;pin<JSH_PIN_COUNT;pin++)
     if (gpioShouldWatch[pin]) {
       bool state = jshPinGetValue(pin);
       if (state != gpioLastState[pin]) {
@@ -223,7 +212,7 @@ int jshGetSerialNumber(unsigned char *data, int maxChars) {
       if (strncmp(line, "Serial", 6) == 0) {
         char serial_string[16 + 1];
         strcpy(serial_string, strchr(line, ':') + 2);
-        serial = stringToIntWithRadix(serial_string, 16);
+        serial = stringToIntWithRadix(serial_string, 16, 0);
       }
     }
     fclose(f);
@@ -284,6 +273,13 @@ void jshPinSetState(Pin pin, JshPinState state) {
 #endif
 }
 
+JshPinState jshPinGetState(Pin pin) {
+#ifdef SYSFS_GPIO_DIR
+  return gpioState[pin];
+#endif
+  return JSHPINSTATE_UNDEFINED;
+}
+
 void jshPinSetValue(Pin pin, bool value) {
 #ifdef SYSFS_GPIO_DIR
   char path[64] = SYSFS_GPIO_DIR"/gpio";
@@ -301,14 +297,6 @@ bool jshPinGetValue(Pin pin) {
   return sysfs_read_int(path);
 #else
   return false;
-#endif
-}
-
-bool jshIsPinValid(Pin pin) {
-#ifdef SYSFS_GPIO_DIR
-  return pin>=SYSFS_GPIO_MIN && pin<=SYSFS_GPIO_MAX;
-#else
-  return true;
 #endif
 }
 
@@ -334,39 +322,6 @@ JsSysTime jshGetSystemTime() {
 }
 
 // ----------------------------------------------------------------------------
-
-Pin jshGetPinFromString(const char *s) {
-#ifdef SYSFS_GPIO_DIR
-  if ((s[0]=='D') && s[1]) { // first 6 are analogs
-    Pin pin = 127;
-    if (!s[2] && (s[1]>='0' && s[1]<='9')) { // D0-D9
-      pin = (Pin)(s[1]-'0');
-    } else if (!s[3] && (s[1]>='1' && s[1]<='3' && s[2]>='0' && s[2]<='9')) { // D1X-D3X
-      pin = (Pin)((s[1]-'0')*10 + (s[2]-'0'));
-    }
-    if (pin>=SYSFS_GPIO_MIN && pin<=SYSFS_GPIO_MAX)
-      return pin;
-  }
-#endif
-#ifndef CARAMBOLA
-  if (!strcmp(s,"D0")) return (Pin)0;
-  if (!strcmp(s,"D1")) return (Pin)1;
-  if (!strcmp(s,"D2")) return (Pin)2;
-  if (!strcmp(s,"D3")) return (Pin)3;
-  if (!strcmp(s,"LED1")) return (Pin)1; 
-  if (!strcmp(s,"LED2")) return (Pin)2; 
-  if (!strcmp(s,"LED3")) return (Pin)3; 
-  if (!strcmp(s,"LED4")) return (Pin)4; 
-  if (!strcmp(s,"BTN")) return (Pin)5; 
-#endif
-  return -1;
-}
-
-/** Write the pin name to a string. String must have at least 8 characters (to be safe) */
-void jshGetPinString(char *result, Pin pin) {
-  result[0]='D';
-  itoa(pin,&result[1],10);
-}
 
 bool jshPinInput(Pin pin) {
   bool value = false;
@@ -432,7 +387,7 @@ void jshPinWatch(Pin pin, bool shouldWatch) {
 bool jshGetWatchedPinState(IOEventFlags device) {
 #ifdef SYSFS_GPIO_DIR
   Pin i;
-  for (i=0;i<=SYSFS_GPIO_MAX;i++)
+  for (i=0;i<JSH_PIN_COUNT;i++)
     if (gpioEventFlags[i]==device)
       return jshPinGetValue(i);
 #endif
@@ -484,9 +439,7 @@ void jshSaveToFlash() {
   FILE *f = fopen("espruino.state","wb");
   if (f) {
     unsigned int jsVarCount = jsvGetMemoryTotal();
-    jsiConsolePrint("\nSaving ");
-    jsiConsolePrintInt(jsVarCount*sizeof(JsVar));
-    jsiConsolePrint(" bytes...");
+    jsiConsolePrintf("\nSaving %d bytes...", jsVarCount*sizeof(JsVar));
     JsVarRef i;
 
     for (i=1;i<=jsVarCount;i++) {
@@ -506,9 +459,7 @@ void jshLoadFromFlash() {
     unsigned int fileSize = ftell(f);
     fseek(f, 0L, SEEK_SET);
 
-    jsiConsolePrint("\nLoading ");
-    jsiConsolePrintInt(fileSize);
-    jsiConsolePrint(" bytes...\n>");
+    jsiConsolePrintf("\nLoading %d bytes...\n>", fileSize);
 
     unsigned int jsVarCount = fileSize / sizeof(JsVar);
     jsvSetMemoryTotal(jsVarCount);
@@ -528,18 +479,15 @@ bool jshFlashContainsCode() {
   return f!=0;
 }
 
-/// Enter simple sleep mode (can be woken up by interrupts)
-void jshSleep() {
+/// Enter simple sleep mode (can be woken up by interrupts). Returns true on success
+bool jshSleep(JsSysTime timeUntilWake) {
   bool hasWatches = false;
 #ifdef SYSFS_GPIO_DIR
   Pin pin;
-  for (pin=SYSFS_GPIO_MIN;pin<=SYSFS_GPIO_MAX;pin++)
+  for (pin=0;pin<JSH_PIN_COUNT;pin++)
     if (gpioShouldWatch[pin]) hasWatches = true;
 #endif
 
   usleep(hasWatches ? 1000 : (10*1000)); // don't sleep much if we have watches - we need to keep polling them
-}
-
-void jshBitBang(Pin pin, JsVarFloat t0h, JsVarFloat t0l, JsVarFloat t1h, JsVarFloat t1l, JsVar *str) {
-  jsError("Bit banging not implemented on Linux");
+  return true;
 }

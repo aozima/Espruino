@@ -18,6 +18,9 @@ info = {
  'name' : "Espruino Board rev 1.3",
  'link' : [ "http://www.espruino.com/kick" ],
  'variables' : 2000,
+ 'bootloader' : 1,
+ 'serial_bootloader' : True,
+ 'binary_name' : 'espruino_%v_espruino_1r3.bin',
 };
 chip = {
   'part' : "STM32F103RCT6",
@@ -50,7 +53,7 @@ devices = {
   'BTN1' : { 'pin' : 'B12' },
   'USB' : { 'pin_disc' :  'C13',
             'pin_dm' : 'A11',
-            'pin_bp' : 'A12' },
+            'pin_dp' : 'A12' },
   'SD' :  { 'pin_cs' :  'D2',
             'pin_di' :  'B15',
             'pin_do' :  'B14',

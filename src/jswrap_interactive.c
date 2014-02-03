@@ -23,39 +23,33 @@
 }*/
 void jswrap_interface_setBusyIndicator(JsVar *pinVar) {
   Pin oldPin = pinBusyIndicator;
-  if (jsvIsUndefined(pinVar)) {
-    pinBusyIndicator = -1;
-  } else {
-    pinBusyIndicator = jshGetPinFromVar(pinVar);
-    if (pinBusyIndicator<0)
-      jsError("Invalid pin!");
-  }
+  pinBusyIndicator = jshGetPinFromVar(pinVar);
   // we should be busy right now anyway, so set stuff up right
   if (pinBusyIndicator!=oldPin) {
-    if (oldPin>=0) jshPinOutput(oldPin, 0);
-    if (pinBusyIndicator>=0) jshPinOutput(pinBusyIndicator, 1);
+    if (oldPin!=PIN_UNDEFINED) jshPinOutput(oldPin, 0);
+    if (pinBusyIndicator!=PIN_UNDEFINED) jshPinOutput(pinBusyIndicator, 1);
   }
 }
 
 /*JSON{ "type":"function", "name" : "setSleepIndicator",
-         "description" : "When Espruino is asleep, set the pin specified here high. Set this to undefined to disable the feature.",
+         "description" : ["When Espruino is asleep, set the pin specified here low (when it's awake, set it high). Set this to undefined to disable the feature.",
+                         "Please see [http://www.espruino.com/Power+Consumption] for more details on this."],
          "generate" : "jswrap_interface_setSleepIndicator",
          "params" : [ [ "pin", "JsVar", ""] ]
 }*/
 void jswrap_interface_setSleepIndicator(JsVar *pinVar) {
-  if (jsvIsUndefined(pinVar)) {
-    pinSleepIndicator = -1;
-  } else {
-    pinSleepIndicator = jshGetPinFromVar(pinVar);
-    if (pinSleepIndicator<0)
-      jsError("Invalid pin!");
+  Pin oldPin = pinSleepIndicator;
+  pinSleepIndicator = jshGetPinFromVar(pinVar);
+  // we should be awake right now anyway, so set stuff up right
+  if (pinSleepIndicator!=oldPin) {
+    if (oldPin!=PIN_UNDEFINED) jshPinOutput(oldPin, 0);
+    if (pinSleepIndicator!=PIN_UNDEFINED) jshPinOutput(pinSleepIndicator, 1);
   }
-  jsvUnLock(pinVar);
 }
 
 /*JSON{ "type":"function", "name" : "setDeepSleep",
-         "description" : [ "Set whether we can enter deep sleep mode, which reduces power consumption to around 1mA. This only works on the Espruino Board.",
-                           "Deep Sleep is currently beta. Espruino will only enter Deep Sleep when there are no timers and it is not connected to USB. USB will not wake Espruino from Deep Sleep, nor will Serial comms (only setWatch will wake it). The System Timer will also pause." ],
+         "description" : [ "Set whether we can enter deep sleep mode, which reduces power consumption to around 100uA. This only works on the Espruino Board.",
+                           "Please see [http://www.espruino.com/Power+Consumption] for more details on this." ],
          "generate" : "jswrap_interface_setDeepSleep",
          "params" : [ [ "sleep", "bool", ""] ]
 }*/
@@ -115,7 +109,7 @@ void jswrap_interface_trace(JsVar *root) {
 }*/
 void jswrap_interface_print(JsVar *v) {
   assert(jsvIsArray(v));
-  JsArrayIterator it;
+  JsvArrayIterator it;
   jsvArrayIteratorNew(&it, v);
   while (jsvArrayIteratorHasElement(&it)) {
     JsVar *v = jsvAsString(jsvArrayIteratorGetElement(&it), true);
@@ -128,55 +122,6 @@ void jswrap_interface_print(JsVar *v) {
   }
   jsvArrayIteratorFree(&it);
   jsiConsolePrint("\n");
-}
-
-
-/*JSON{ "type":"function", "name" : "memory",
-        "description" : ["Run a Garbage Collection pass, and return an object containing information on memory usage.",
-                         "free : Memory that is available to be used",
-                         "usage : Memory that has been used",
-                         "total : Total memory",
-                         "history : Memory used for command history - that is freed if memory is low. Note that this is INCLUDED in the figure for 'free'.",
-                         "On ARM, stackEndAddress is the address (that can be used with peek/poke/etc) of the END of the stack. The stack grows down, so unless you do a lot of recursion, the bytes above this can be used."],
-        "generate" : "jswrap_interface_memory",
-        "return" : ["JsVar", "Information about memory usage"]
-}*/
-#ifdef ARM
-extern void _end;
-#endif
-JsVar *jswrap_interface_memory() {
-  jsvGarbageCollect();
-  JsVar *obj = jsvNewWithFlags(JSV_OBJECT);
-  if (obj) {
-    unsigned int history = 0;
-    JsVar *historyVar = jsvObjectGetChild(jsiGetParser()->root, JSI_HISTORY_NAME, 0);
-    if (historyVar) {
-      history = (unsigned int)jsvCountJsVarsUsed(historyVar); // vars used to store history
-      jsvUnLock(historyVar);
-    }
-    unsigned int usage = jsvGetMemoryUsage() - history;
-    unsigned int total = jsvGetMemoryTotal();
-    JsVar *v;
-    v = jsvNewFromInteger(total-usage);
-    jsvUnLock(jsvAddNamedChild(obj, v, "free"));
-    jsvUnLock(v);
-    v = jsvNewFromInteger(usage);
-    jsvUnLock(jsvAddNamedChild(obj, v, "usage"));
-    jsvUnLock(v);
-    v = jsvNewFromInteger(total);
-    jsvUnLock(jsvAddNamedChild(obj, v, "total"));
-    jsvUnLock(v);
-    v = jsvNewFromInteger(history);
-    jsvUnLock(jsvAddNamedChild(obj, v, "history"));
-    jsvUnLock(v);
-
-#ifdef ARM
-    v = jsvNewFromInteger((JsVarInt)(unsigned int)&_end);
-    jsvUnLock(jsvAddNamedChild(obj, v, "stackEndAddress"));
-    jsvUnLock(v);
-#endif
-  }
-  return obj;
 }
 
 /*JSON{ "type":"function", "name" : "edit",

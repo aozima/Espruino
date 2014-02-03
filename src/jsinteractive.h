@@ -50,25 +50,12 @@ IOEventFlags jsiGetConsoleDevice();
 void jsiConsolePrintChar(char data);
 /// Transmit a string
 void jsiConsolePrint(const char *str);
-/** Transmit a formatted String. This is a VERY CUT DOWN and bastardised printf
- * Supported are:
- *   %d = int
- *   %x = int as hex
- *   %l = JsVarInt
- *   %f = JsVarFloat
- *   %s = string (char *)
- *   %c = char
- *   %v = JsVar *
- *
- * Anything else will assert
- */
+/// Write the formatted string to the console (see vcbprintf)
 void jsiConsolePrintf(const char *fmt, ...);
 /// Print the contents of a string var - directly
 void jsiConsolePrintStringVar(JsVar *v);
 /// Transmit an integer
 void jsiConsolePrintInt(JsVarInt d);
-/// Transmit an integer as hex (no '0x')
-void jsiConsolePrintHexInt(JsVarInt d);
 /// Transmit a position in the lexer (for reporting errors)
 void jsiConsolePrintPosition(struct JsLex *lex, int tokenPos);
 /// Transmit the current line, along with a marker of where the error was (for reporting errors)

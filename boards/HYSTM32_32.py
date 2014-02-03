@@ -17,7 +17,9 @@ import pinutils;
 info = {
  'name' : "HY-MiniSTM32V 3.2 inch LCD Board (VCT6)",
  'link' : [ "http://www.hotmcu.com/hyministm32v-dev-board-32-tft-lcd-module-p-5.html" ],
- 'variables' : 254,
+ 'variables' : 2000,
+ 'serial_bootloader' : True,
+  'binary_name' : 'espruino_%v_hystm32_32_vc.bin',
 };
 chip = {
   'part' : "STM32F103VC",
@@ -52,7 +54,7 @@ devices = {
   'BTN2' : { 'pin' : 'B2' }, # TODO inverted?
   'USB' : { 'pin_disc' :  'B7',
             'pin_dm' : 'A11',
-            'pin_bp' : 'A12' },
+            'pin_dp' : 'A12' },
   'SD' :  { 'pin_cmd' :  'D2',
             'pin_cd' :  'D3',
             'pin_d0' :  'C8',

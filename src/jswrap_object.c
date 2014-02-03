@@ -107,8 +107,7 @@ JsVar *jswrap_object_keys(JsVar *obj) {
       if (!(checkerFunction && checkerFunction(key))) {
         JsVar *name = jsvCopyNameOnly(key,false,false);
         if (name) {
-          jsvArrayPush(arr, name);
-          jsvUnLock(name);
+          jsvArrayPushAndUnLock(arr, name);
         }
       }
       jsvUnLock(key);
@@ -208,7 +207,7 @@ void jswrap_object_removeAllListeners(JsVar *parent, JsVar *event) {
     }
   } else if (jsvIsUndefined(event)) {
     // Eep. We must remove everything beginning with '#on'
-    JsObjectIterator it;
+    JsvObjectIterator it;
     jsvObjectIteratorNew(&it, parent);
     while (jsvObjectIteratorHasElement(&it)) {
       JsVar *key = jsvObjectIteratorGetKey(&it);
@@ -249,7 +248,7 @@ void jswrap_function_replaceWith(JsVar *oldFunc, JsVar *newFunc) {
   jsvAddName(oldFunc, scope);
   jsvUnLock(scope);
   // now re-add other entries
-  JsObjectIterator it;
+  JsvObjectIterator it;
   jsvObjectIteratorNew(&it, newFunc);
   while (jsvObjectIteratorHasElement(&it)) {
     JsVar *el = jsvObjectIteratorGetKey(&it);
@@ -293,18 +292,18 @@ JsVar *jswrap_function_call(JsVar *parent, JsVar *thisArg, JsVar *a, JsVar *b, J
          "return" : [ "JsVar", "The return value of executing this function" ]
 }*/
 JsVar *jswrap_function_apply(JsVar *parent, JsVar *thisArg, JsVar *argsArray) {
-  int i;
+  unsigned int i;
   JsVar **args = 0;
   size_t argC = 0;
 
   if (jsvIsArray(argsArray)) {
-    argC = jsvGetArrayLength(argsArray);
+    argC = (unsigned int)jsvGetArrayLength(argsArray);
     if (argC>64) argC=64; // sanity
     args = (JsVar**)alloca((size_t)argC * sizeof(JsVar*));
 
 
     for (i=0;i<argC;i++) args[i] = 0;
-    JsArrayIterator it;
+    JsvArrayIterator it;
     jsvArrayIteratorNew(&it, argsArray);
     while (jsvArrayIteratorHasElement(&it)) {
       JsVarInt idx = jsvGetIntegerAndUnLock(jsvArrayIteratorGetIndex(&it));

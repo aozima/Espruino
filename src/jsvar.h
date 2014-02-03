@@ -141,7 +141,6 @@ JsVar *jsvNewWithFlags(JsVarFlags flags);
 JsVar *jsvNewFromString(const char *str); ///< Create a new string
 JsVar *jsvNewStringOfLength(unsigned int byteLength); ///< Create a new string of the given length - full of 0s
 static inline JsVar *jsvNewFromEmptyString() { return jsvNewWithFlags(JSV_STRING); } ;///< Create a new empty string
-JsVar *jsvNewFromLexer(struct JsLex *lex, JslCharPos charFrom, JslCharPos charTo); // Create a new STRING from part of the lexer
 JsVar *jsvNewFromInteger(JsVarInt value);
 JsVar *jsvNewFromBool(bool value);
 JsVar *jsvNewFromFloat(JsVarFloat value);
@@ -205,7 +204,7 @@ static inline bool jsvIsIterable(const JsVar *v) {
          jsvIsString(v) || jsvIsArrayBuffer(v);
 }
 
-/** Does this string contain only Numeric characters? */
+/** Does this string contain only Numeric characters? NOT '.'/'e' and similar */
 bool jsvIsStringNumeric(const JsVar *var);
 /** Does this string contain only Numeric characters? This is for arrays
  * and makes the assertion that int_to_string(string_to_int(var))==var */
@@ -258,6 +257,7 @@ bool jsvIsEqual(JsVar *a, JsVar *b);
 
 
 const char *jsvGetConstString(const JsVar *v); ///< Get a const string representing this variable - if we can. Otherwise return 0
+const char *jsvGetTypeOf(const JsVar *v); ///< Return the 'type' of the JS variable (eg. JS's typeof operator)
 size_t jsvGetString(const JsVar *v, char *str, size_t len); ///< Save this var as a string to the given buffer, and return how long it was (return val doesn't include terminating 0)
 void jsvSetString(JsVar *v, char *str, size_t len); ///< Set the Data in this string. This must JUST overwrite - not extend or shrink
 JsVar *jsvAsString(JsVar *var, bool unlockVar); ///< If var is a string, lock and return it, else create a new string
@@ -271,8 +271,7 @@ int jsvCompareString(JsVar *va, JsVar *vb, int starta, int startb, bool equalAtE
 int jsvCompareInteger(JsVar *va, JsVar *vb); ///< Compare 2 integers, >0 if va>vb,  <0 if va<vb. If compared with a non-integer, that gets put later
 void jsvAppendString(JsVar *var, const char *str); ///< Append the given string to this one
 void jsvAppendStringBuf(JsVar *var, const char *str, int length); ///< Append the given string to this one - but does not use null-terminated strings
-void jsvAppendInteger(JsVar *var, JsVarInt i); ///< Append the given integer to this string as a decimal
-void jsvAppendPin(JsVar *var, Pin pin); ///< Append the given 'pin' to a string
+void jsvAppendPrintf(JsVar *var, const char *fmt, ...); ///< Append the formatted string to a variable (see vcbprintf)
 static inline void jsvAppendCharacter(JsVar *var, char ch) { jsvAppendStringBuf(var, &ch, 1); }; ///< Append the given character to this string
 #define JSVAPPENDSTRINGVAR_MAXLENGTH (0x7FFFFFFF)
 void jsvAppendStringVar(JsVar *var, const JsVar *str, int stridx, int maxLength); ///< Append str to var. Both must be strings. stridx = start char or str, maxLength = max number of characters (can be JSVAPPENDSTRINGVAR_MAXLENGTH). stridx can be negative to go from end of string
@@ -281,8 +280,9 @@ char jsvGetCharInString(JsVar *v, int idx);
 
 JsVarInt jsvGetInteger(const JsVar *v);
 void jsvSetInteger(JsVar *v, JsVarInt value); ///< Set an integer value (use carefully!)
-JsVarFloat jsvGetFloat(const JsVar *v); // TODO: rename to jsvGetFloat
+JsVarFloat jsvGetFloat(const JsVar *v); ///< Get the floating point representation of this var
 bool jsvGetBool(const JsVar *v);
+JsVar *jsvAsNumber(JsVar *var); ///< Convert the given variable to a number
 static inline JsVarInt _jsvGetIntegerAndUnLock(JsVar *v) { JsVarInt i = jsvGetInteger(v); jsvUnLock(v); return i; }
 static inline JsVarFloat _jsvGetFloatAndUnLock(JsVar *v) { JsVarFloat f = jsvGetFloat(v); jsvUnLock(v); return f; }
 static inline bool _jsvGetBoolAndUnLock(JsVar *v) { bool b = jsvGetBool(v); jsvUnLock(v); return b; }
@@ -386,10 +386,11 @@ int jsvGetChildren(JsVar *v); ///< number of children of a variable. also see js
 JsVarInt jsvGetArrayLength(JsVar *arr); ///< Not the same as GetChildren, as it can be a sparse array
 JsVarInt jsvGetLength(JsVar *src); ///< General purpose length function. Does the 'right' thing
 size_t jsvCountJsVarsUsed(JsVar *v); ///< Count the amount of JsVars used. Mostly useful for debugging
-JsVar *jsvGetArrayItem(JsVar *arr, int index); ///< Get an item at the specified index in the array (and lock it)
+JsVar *jsvGetArrayItem(JsVar *arr, JsVarInt index); ///< Get an item at the specified index in the array (and lock it)
 JsVar *jsvGetArrayIndexOf(JsVar *arr, JsVar *value, bool matchExact); ///< Get the index of the value in the array (matchExact==use pointer, not equality check)
 JsVarInt jsvArrayPushWithInitialSize(JsVar *arr, JsVar *value, JsVarInt initialValue); ///< Adds new elements to the end of an array, and returns the new length. initialValue is the item index when no items are currently in the array.
-JsVarInt jsvArrayPush(JsVar *arr, JsVar *value); ///< Adds new elements to the end of an array, and returns the new length
+JsVarInt jsvArrayPush(JsVar *arr, JsVar *value); ///< Adds a new element to the end of an array, and returns the new length
+JsVarInt jsvArrayPushAndUnLock(JsVar *arr, JsVar *value); ///< Adds a new element to the end of an array, unlocks it, and returns the new length
 JsVar *jsvArrayPop(JsVar *arr); ///< Removes the last element of an array, and returns that element (or 0 if empty). includes the NAME
 JsVar *jsvArrayPopFirst(JsVar *arr); ///< Removes the first element of an array, and returns that element (or 0 if empty) includes the NAME
 JsVar *jsvArrayGetLast(JsVar *arr); ///< Get the last element of an array (does not remove, unlike jsvArrayPop), and returns that element (or 0 if empty) includes the NAME
@@ -403,10 +404,6 @@ void jsvTrace(JsVarRef ref, int indent);
 /** Run a garbage collection sweep - return true if things have been freed */
 bool jsvGarbageCollect();
 
-/** Dotty output for the graphviz package - helps
- *  visualize the data structure  */
-void jsvDottyOutput();
-
 /** Remove whitespace to the right of a string - on MULTIPLE LINES */
 JsVar *jsvStringTrimRight(JsVar *srcString);
 
@@ -419,7 +416,7 @@ bool jsvIsInternalObjectKey(JsVar *v);
 typedef struct JsvStringIterator {
   size_t charIdx; ///< index of character in var
   size_t charsInVar; ///< total characters in var
-  size_t index; ///< index in string
+  size_t varIndex; ///< index in string of the start of this var
   JsVar *var; ///< current StringExt we're looking at
 } JsvStringIterator;
 
@@ -427,6 +424,14 @@ typedef struct JsvStringIterator {
 #define jsvStringIteratorNewConst(it,str,startIdx) jsvStringIteratorNew(it,(JsVar*)str,startIdx)
 
 void jsvStringIteratorNew(JsvStringIterator *it, JsVar *str, int startIdx);
+
+/// Clone the string iterator
+static inline JsvStringIterator jsvStringIteratorClone(JsvStringIterator *it) {
+  JsvStringIterator i = *it;
+  if (i.var) jsvLockAgain(i.var);
+  return i;
+}
+
 
 /// Gets the current character (or 0)
 static inline char jsvStringIteratorGetChar(JsvStringIterator *it) {
@@ -442,7 +447,7 @@ static inline int jsvStringIteratorGetCharOrMinusOne(JsvStringIterator *it) {
 
 /// Do we have a character, or are we at the end?
 static inline bool jsvStringIteratorHasChar(JsvStringIterator *it) {
-  return it->var && it->charIdx < it->charsInVar;
+  return it->charIdx < it->charsInVar;
 }
 
 /// Sets a character (will not extend the string - just overwrites)
@@ -453,11 +458,35 @@ static inline void jsvStringIteratorSetChar(JsvStringIterator *it, char c) {
 
 /// Gets the current index in the string
 static inline size_t jsvStringIteratorGetIndex(JsvStringIterator *it) {
-  return  it->index;
+  return it->varIndex + it->charIdx;
 }
 
 /// Move to next character
 void jsvStringIteratorNext(JsvStringIterator *it);
+
+/// Move to next character (this one is inlined where speed is needed)
+static inline void jsvStringIteratorNextInline(JsvStringIterator *it) {
+  it->charIdx++;
+  if (it->charIdx >= it->charsInVar) {
+    it->charIdx -= it->charsInVar;
+    if (it->var && it->var->lastChild) {
+      JsVar *next = jsvLock(it->var->lastChild);
+      jsvUnLock(it->var);
+      it->var = next;
+      it->varIndex += it->charsInVar;
+      it->charsInVar = jsvGetCharactersInVar(it->var);
+    } else {
+      jsvUnLock(it->var);
+      it->var = 0;
+      it->varIndex += it->charsInVar;
+      it->charsInVar = 0;
+    }
+  }
+}
+
+
+/// Go to the end of the string iterator - for use with jsvStringIteratorAppend
+void jsvStringIteratorGotoEnd(JsvStringIterator *it);
 
 /// Append a character TO THE END of a string iterator
 void jsvStringIteratorAppend(JsvStringIterator *it, char ch);
@@ -467,34 +496,34 @@ static inline void jsvStringIteratorFree(JsvStringIterator *it) {
 }
 
 // --------------------------------------------------------------------------------------------
-typedef struct JsArrayIterator {
+typedef struct JsvArrayIterator {
   JsVar *var;
-} JsArrayIterator;
+} JsvArrayIterator;
 
-static inline void jsvArrayIteratorNew(JsArrayIterator *it, JsVar *arr) {
+static inline void jsvArrayIteratorNew(JsvArrayIterator *it, JsVar *arr) {
   assert(jsvIsArray(arr));
   it->var = arr->firstChild ? jsvLock(arr->firstChild) : 0;
 }
 
 /// Gets the current array element (or 0)
-static inline JsVar *jsvArrayIteratorGetElement(JsArrayIterator *it) {
+static inline JsVar *jsvArrayIteratorGetElement(JsvArrayIterator *it) {
   if (!it->var) return 0; // end of array
   return it->var->firstChild ? jsvLock(it->var->firstChild) : 0; // might even be undefined
 }
 
 /// Gets the current array element index (or 0)
-static inline JsVar *jsvArrayIteratorGetIndex(JsArrayIterator *it) {
+static inline JsVar *jsvArrayIteratorGetIndex(JsvArrayIterator *it) {
   if (!it->var) return 0;
   return jsvLockAgain(it->var);
 }
 
 /// Do we have a character, or are we at the end?
-static inline bool jsvArrayIteratorHasElement(JsArrayIterator *it) {
+static inline bool jsvArrayIteratorHasElement(JsvArrayIterator *it) {
   return it->var != 0;
 }
 
 /// Move to next character
-static inline void jsvArrayIteratorNext(JsArrayIterator *it) {
+static inline void jsvArrayIteratorNext(JsvArrayIterator *it) {
   if (it->var) {
     JsVarRef next = it->var->nextSibling;
     jsvUnLock(it->var);
@@ -502,38 +531,38 @@ static inline void jsvArrayIteratorNext(JsArrayIterator *it) {
   }
 }
 
-static inline void jsvArrayIteratorFree(JsArrayIterator *it) {
+static inline void jsvArrayIteratorFree(JsvArrayIterator *it) {
   jsvUnLock(it->var);
 }
 // --------------------------------------------------------------------------------------------
-typedef struct JsObjectIterator {
+typedef struct JsvObjectIterator {
   JsVar *var;
-} JsObjectIterator;
+} JsvObjectIterator;
 
-static inline void jsvObjectIteratorNew(JsObjectIterator *it, JsVar *obj) {
+static inline void jsvObjectIteratorNew(JsvObjectIterator *it, JsVar *obj) {
   assert(jsvIsObject(obj) || jsvIsFunction(obj));
   it->var = obj->firstChild ? jsvLock(obj->firstChild) : 0;
 }
 
 /// Gets the current object element key (or 0)
-static inline JsVar *jsvObjectIteratorGetKey(JsObjectIterator *it) {
+static inline JsVar *jsvObjectIteratorGetKey(JsvObjectIterator *it) {
   if (!it->var) return 0; // end of object
   return jsvLockAgain(it->var);
 }
 
 /// Gets the current object element value (or 0)
-static inline JsVar *jsvObjectIteratorGetValue(JsObjectIterator *it) {
+static inline JsVar *jsvObjectIteratorGetValue(JsvObjectIterator *it) {
   if (!it->var) return 0; // end of object
   return it->var->firstChild ? jsvLock(it->var->firstChild) : 0; // might even be undefined
 }
 
 /// Do we have a key, or are we at the end?
-static inline bool jsvObjectIteratorHasElement(JsObjectIterator *it) {
+static inline bool jsvObjectIteratorHasElement(JsvObjectIterator *it) {
   return it->var != 0;
 }
 
 /// Move to next character
-static inline void jsvObjectIteratorNext(JsObjectIterator *it) {
+static inline void jsvObjectIteratorNext(JsvObjectIterator *it) {
   if (it->var) {
     JsVarRef next = it->var->nextSibling;
     jsvUnLock(it->var);
@@ -541,7 +570,7 @@ static inline void jsvObjectIteratorNext(JsObjectIterator *it) {
   }
 }
 
-static inline void jsvObjectIteratorFree(JsObjectIterator *it) {
+static inline void jsvObjectIteratorFree(JsvObjectIterator *it) {
   jsvUnLock(it->var);
 }
 // --------------------------------------------------------------------------------------------
@@ -567,8 +596,8 @@ void   jsvArrayBufferIteratorFree(JsvArrayBufferIterator *it);
 // --------------------------------------------------------------------------------------------
 union JsvIteratorUnion {
   JsvStringIterator str;
-  JsObjectIterator obj;
-  JsArrayIterator arr;
+  JsvObjectIterator obj;
+  JsvArrayIterator arr;
   JsvArrayBufferIterator buf;
 };
 

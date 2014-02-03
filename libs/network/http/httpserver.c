@@ -16,6 +16,9 @@
 #define SOCKET_ERROR (-1)
 #include "jsparse.h"
 #include "jsinteractive.h"
+#include "../network.h"
+
+#include <string.h> // for memset
 
 #ifdef USE_CC3000
  #include "socket.h"
@@ -57,7 +60,7 @@ static void httpError(const char *msg) {
 
 static void httpAppendHeaders(JsVar *string, JsVar *headerObject) {
   // append headers
-  JsObjectIterator it;
+  JsvObjectIterator it;
   jsvObjectIteratorNew(&it, headerObject);
   while (jsvObjectIteratorHasElement(&it)) {
     JsVar *k = jsvAsString(jsvObjectIteratorGetKey(&it), true);
@@ -111,7 +114,7 @@ void httpKill() {
   {
       JsVar *arr = httpGetArray(HTTP_ARRAY_HTTP_SERVER_CONNECTIONS,false);
       if (arr) {
-        JsArrayIterator it;
+        JsvArrayIterator it;
         jsvArrayIteratorNew(&it, arr);
         while (jsvArrayIteratorHasElement(&it)) {
           JsVar *connection = jsvArrayIteratorGetElement(&it);
@@ -127,7 +130,7 @@ void httpKill() {
   {
     JsVar *arr = httpGetArray(HTTP_ARRAY_HTTP_CLIENT_CONNECTIONS,false);
     if (arr) {
-      JsArrayIterator it;
+      JsvArrayIterator it;
       jsvArrayIteratorNew(&it, arr);
       while (jsvArrayIteratorHasElement(&it)) {
         JsVar *connection = jsvArrayIteratorGetElement(&it);
@@ -144,7 +147,7 @@ void httpKill() {
   {
       JsVar *arr = httpGetArray(HTTP_ARRAY_HTTP_SERVERS,false);
       if (arr) {
-        JsArrayIterator it;
+        JsvArrayIterator it;
         jsvArrayIteratorNew(&it, arr);
         while (jsvArrayIteratorHasElement(&it)) {
           JsVar *connection = jsvArrayIteratorGetElement(&it);
@@ -303,7 +306,7 @@ void httpServerConnectionsIdle() {
 
   JsVar *arr = httpGetArray(HTTP_ARRAY_HTTP_SERVER_CONNECTIONS,false);
   if (!arr) return;
-  JsArrayIterator it;
+  JsvArrayIterator it;
   jsvArrayIteratorNew(&it, arr);
   while (jsvArrayIteratorHasElement(&it)) {
     JsVar *connection = jsvArrayIteratorGetElement(&it);
@@ -406,7 +409,7 @@ void httpClientConnectionsIdle() {
   JsVar *arr = httpGetArray(HTTP_ARRAY_HTTP_CLIENT_CONNECTIONS,false);
   if (!arr) return;
 
-  JsArrayIterator it;
+  JsvArrayIterator it;
   jsvArrayIteratorNew(&it, arr);
   while (jsvArrayIteratorHasElement(&it)) {
     JsVar *connection = jsvArrayIteratorGetElement(&it);
@@ -524,13 +527,10 @@ void httpClientConnectionsIdle() {
 
 
 void httpIdle() {
-#ifdef USE_CC3000
-  cc3000_check_irq_pin(); // check CC3k, as we're working without IRQs now
-#endif
-
+  if (networkState != NETWORKSTATE_ONLINE) return;
   JsVar *arr = httpGetArray(HTTP_ARRAY_HTTP_SERVERS,false);
   if (arr) {
-    JsArrayIterator it;
+    JsvArrayIterator it;
     jsvArrayIteratorNew(&it, arr);
     while (jsvArrayIteratorHasElement(&it)) {
       JsVar *server = jsvArrayIteratorGetElement(&it);
@@ -552,8 +552,15 @@ void httpIdle() {
       int n=1;
   #endif
       while (n-->0) {
-        // we have a client waiting to connect...
-        int theClient = accept(socket,NULL,NULL); // try and connect
+        // we have a client waiting to connect... try to connect and see what happens
+  #ifdef USE_CC3000
+        // CC3000's implementation doesn't accept NULL like everyone else's :(
+        sockaddr addr;
+        socklen_t addrlen = sizeof(addr);
+        int theClient = accept(socket,&addr,&addrlen); 
+  #else
+        int theClient = accept(socket,0,0);
+  #endif
         if (theClient > -1) {
           JsVar *req = jspNewObject(jsiGetParser(), 0, "httpSRq");
           JsVar *res = jspNewObject(jsiGetParser(), 0, "httpSRs");
@@ -594,7 +601,7 @@ JsVar *httpServerNew(JsVar *callback) {
                        SOCK_STREAM,       // This is a stream-oriented socket
                        IPPROTO_TCP);      // Use TCP rather than UDP
   if (sckt == INVALID_SOCKET) {
-    httpError("httpServer: socket");
+    httpError("socket creation failed");
     return 0;
   }
 
@@ -617,7 +624,7 @@ JsVar *httpServerNew(JsVar *callback) {
   int optval = SOCK_ON;
   if (setsockopt(sckt,SOL_SOCKET,SOCKOPT_ACCEPT_NONBLOCK,(const char *)&optval,sizeof(optval)) < 0)
 #endif
-    jsWarn("http: setsockopt failed\n");
+    jsWarn("setsockopt failed\n");
 
   // add to list of servers
   jsvArrayPush(arr, server);
@@ -638,7 +645,7 @@ void httpServerListen(JsVar *server, int port) {
   serverInfo.sin_port = htons((unsigned short)port); // port
   nret = bind(sckt, (struct sockaddr*)&serverInfo, sizeof(serverInfo));
   if (nret == SOCKET_ERROR) {
-    httpError("httpServer: bind");
+    httpError("socket bind failed");
     closesocket(sckt);
     return;
   }
@@ -646,7 +653,7 @@ void httpServerListen(JsVar *server, int port) {
   // Make the socket listen
   nret = listen(sckt, 10); // 10 connections (but this ignored on CC30000)
   if (nret == SOCKET_ERROR) {
-    httpError("httpServer: listen");
+    httpError("socket listen failed");
     closesocket(sckt);
     return;
   }
@@ -678,13 +685,10 @@ void httpClientRequestWrite(JsVar *httpClientReqVar, JsVar *data) {
     if (options) {
       sendData = jsvNewFromString("");
       JsVar *method = jsvObjectGetChild(options, "method", false);
-      jsvAppendStringVarComplete(sendData, method);
-      jsvUnLock(method);
-      jsvAppendString(sendData, " ");
       JsVar *path = jsvObjectGetChild(options, "path", false);
-      jsvAppendStringVarComplete(sendData, path);
+      jsvAppendPrintf(sendData, "%v %v HTTP/1.0\r\nUser-Agent: Espruino "JS_VERSION"\r\nConnection: close\r\n", method, path);
+      jsvUnLock(method);
       jsvUnLock(path);
-      jsvAppendString(sendData, " HTTP/1.0\r\nUser-Agent: Espruino "JS_VERSION"\r\nConnection: close\r\n");
       JsVar *headers = jsvObjectGetChild(options, "headers", false);
       bool hasHostHeader = false;
       if (jsvIsObject(headers)) {
@@ -697,13 +701,10 @@ void httpClientRequestWrite(JsVar *httpClientReqVar, JsVar *data) {
       if (!hasHostHeader) {
         JsVar *host = jsvObjectGetChild(options, "host", false);
         JsVarInt port = jsvGetIntegerAndUnLock(jsvObjectGetChild(options, "port", false));
-        jsvAppendString(sendData, "Host: ");
-        jsvAppendStringVarComplete(sendData, host);
-        if (port>0 && port!=80) {
-          jsvAppendString(sendData, ":");
-          jsvAppendInteger(sendData, port);
-        }
-        jsvAppendString(sendData, "\r\n");
+        if (port>0 && port!=80)
+          jsvAppendPrintf(sendData, "Host: %v:%d\r\n", host, port);
+        else
+          jsvAppendPrintf(sendData, "Host: %v\r\n", host);
         jsvUnLock(host);
       }
       // finally add ending newline
@@ -854,9 +855,8 @@ void httpServerResponseData(JsVar *httpServerResponseVar, JsVar *data) {
     // no sendData, so no headers - add them!
     JsVar *sendHeaders = jsvObjectGetChild(httpServerResponseVar, HTTP_NAME_HEADERS, 0);
     if (sendHeaders) {
-      sendData = jsvNewFromString("HTTP/1.0 ");
-      jsvAppendInteger(sendData, jsvGetIntegerAndUnLock(jsvObjectSetChild(httpServerResponseVar, HTTP_NAME_CODE, 0)));
-      jsvAppendString(sendData, " OK\r\nServer: Espruino "JS_VERSION"\r\n");
+      sendData = jsvNewFromEmptyString();
+      jsvAppendPrintf(sendData, "HTTP/1.0 %d OK\r\nServer: Espruino "JS_VERSION"\r\n", jsvGetIntegerAndUnLock(jsvObjectGetChild(httpServerResponseVar, HTTP_NAME_CODE, 0)));
       httpAppendHeaders(sendData, sendHeaders);
       jsvObjectSetChild(httpServerResponseVar, HTTP_NAME_HEADERS, 0);
       jsvUnLock(sendHeaders);

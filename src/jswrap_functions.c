@@ -18,6 +18,10 @@
 #include "jsparse.h"
 #include "jsinteractive.h"
 
+
+// for jswrap_isNaN
+extern int isnan(double x);
+
 /*JSON{ "type":"variable", "name" : "arguments",
          "description" : "A variable containing the arguments given to the function",
          "generate" : "jswrap_arguments",
@@ -37,14 +41,13 @@ JsVar *jswrap_arguments() {
   JsVar *args = jsvNewWithFlags(JSV_ARRAY);
   if (!args) return 0; // out of memory
 
-  JsObjectIterator it;
+  JsvObjectIterator it;
   jsvObjectIteratorNew(&it, scope);
   while (jsvObjectIteratorHasElement(&it)) {
     JsVar *idx = jsvObjectIteratorGetKey(&it);
     if (jsvIsFunctionParameter(idx)) {
       JsVar *val = jsvSkipOneName(idx);
-      jsvArrayPush(args, val);
-      jsvUnLock(val);
+      jsvArrayPushAndUnLock(args, val);
     }
     jsvUnLock(idx);
     jsvObjectIteratorNext(&it);
@@ -74,13 +77,20 @@ JsVar *jswrap_eval(JsVar *v) {
          "description" : "Convert a string representing a number into an integer",
          "generate" : "jswrap_parseInt",
          "params" :  [ [ "string", "JsVar", ""],
-                       [ "radix", "int", "The Radix of the string (optional)"] ],
-         "return" : ["int", "The value of the string"]
+                       [ "radix", "JsVar", "The Radix of the string (optional)"] ],
+         "return" : ["JsVar", "The integer value of the string (or NaN)"]
 }*/
-JsVarInt jswrap_parseInt(JsVar *v, JsVarInt radix) {
+JsVar *jswrap_parseInt(JsVar *v, JsVar *radixVar) {
+  int radix = 0/*don't force radix*/;
+  if (jsvIsNumeric(radixVar))
+    radix = (int)jsvGetInteger(radixVar);
+
   char buffer[JS_NUMBER_BUFFER_SIZE];
   jsvGetString(v, buffer, JS_NUMBER_BUFFER_SIZE);
-  return stringToIntWithRadix(buffer, (int)radix);
+  bool hasError;
+  JsVarInt i = stringToIntWithRadix(buffer, radix, &hasError);
+  if (hasError) return jsvNewFromFloat(NAN);
+  return jsvNewFromInteger(i);
 }
 
 /*JSON{ "type":"function", "name" : "parseFloat",
@@ -93,4 +103,33 @@ JsVarFloat jswrap_parseFloat(JsVar *v) {
   char buffer[JS_NUMBER_BUFFER_SIZE];
   jsvGetString(v, buffer, JS_NUMBER_BUFFER_SIZE);
   return stringToFloat(buffer);
+}
+
+/*JSON{ "type":"function", "name" : "isNaN",
+         "description" : "Whether the x is NaN (Not a Number) or not",
+         "generate" : "jswrap_isNaN",
+         "params" :  [ [ "x", "JsVar", ""] ],
+         "return" : ["bool", "True is the value is NaN, false if not."]
+}*/
+bool jswrap_isNaN(JsVar *v) {
+  if (jsvIsUndefined(v) ||
+      jsvIsObject(v) ||
+      (jsvIsFloat(v) && isnan(jsvGetFloat(v)))) return true;
+  if (jsvIsString(v)) {
+    // this is where is can get a bit crazy
+    bool allWhiteSpace = true;
+    JsvStringIterator it;
+    jsvStringIteratorNew(&it,v,0);
+    while (jsvStringIteratorHasChar(&it)) {
+      if (!isWhitespace(jsvStringIteratorGetChar(&it))) {
+        allWhiteSpace = false;
+        break;
+      }
+      jsvStringIteratorNext(&it);
+    }
+    jsvStringIteratorFree(&it);
+    if (allWhiteSpace) return false;
+    return isnan(jsvGetFloat(v));
+  }
+  return false;
 }

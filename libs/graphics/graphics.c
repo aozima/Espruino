@@ -94,7 +94,7 @@ bool graphicsGetFromVar(JsGraphics *gfx, JsVar *parent) {
     } else if (gfx->data.type == JSGRAPHICSTYPE_JS) {
       lcdSetCallbacks_JS(gfx);
     } else {
-      jsError("INTERNAL - unknown graphics type\n");
+      jsErrorInternal("Unknown graphics type\n");
       assert(0);
     }
 
@@ -349,6 +349,14 @@ unsigned int graphicsFillVectorChar(JsGraphics *gfx, short x1, short y1, short s
       idx=0;
     }
   }
+  return (vector.width * (unsigned int)size)/96;
+}
+
+// returns the width of a character
+unsigned int graphicsVectorCharWidth(JsGraphics *gfx, short size, char ch) {
+  if (size<0) return 0;
+  if (ch<vectorFontOffset || ch-vectorFontOffset>=vectorFontCount) return 0;
+  VectorFontChar vector = vectorFonts[ch-vectorFontOffset];
   return (vector.width * (unsigned int)size)/96;
 }
 

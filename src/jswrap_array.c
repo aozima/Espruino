@@ -16,6 +16,10 @@
 #include "jswrap_array.h"
 #include "jsparse.h"
 
+#define min(a,b) (((a)<(b))?(a):(b))
+#define max(a,b) (((a)>(b))?(a):(b))
+
+
 /*JSON{ "type":"class",
         "class" : "Array",
         "check" : "jsvIsArray(var)",
@@ -55,30 +59,16 @@ JsVar *jswrap_array_constructor(JsVar *args) {
   return jsvLockAgain(args);
 }
 
-/*JSON{ "type":"method", "class": "Array", "name" : "contains",
-         "description" : "Return true if this array contains the given value",
-         "generate" : "jswrap_array_contains",
-         "params" : [ [ "value", "JsVar", "The value to check for"] ],
-         "return" : ["bool", "Whether value is in the array or not"]
-}*/
-bool jswrap_array_contains(JsVar *parent, JsVar *value) {
-  // ArrayIndexOf will return 0 if not found
-  JsVar *arrElement = jsvGetArrayIndexOf(parent, value, false/*not exact*/);
-  bool contains = arrElement!=0;
-  jsvUnLock(arrElement);
-  return contains;
-}
-
 /*JSON{ "type":"method", "class": "Array", "name" : "indexOf",
          "description" : "Return the index of the value in the array, or -1",
          "generate" : "jswrap_array_indexOf",
          "params" : [ [ "value", "JsVar", "The value to check for"] ],
-         "return" : ["JsVar", "the index of the value in the array, or undefined"]
+         "return" : ["JsVar", "the index of the value in the array, or -1"]
 }*/
 JsVar *jswrap_array_indexOf(JsVar *parent, JsVar *value) {
   JsVar *idxName = jsvGetArrayIndexOf(parent, value, false/*not exact*/);
   // but this is the name - we must turn it into a var
-  if (idxName == 0) return 0; // not found!
+  if (idxName == 0) return jsvNewFromInteger(-1); // not found!
   JsVar *idx = jsvCopyNameOnly(idxName, false/* no children */, false/* Make sure this is not a name*/);
   jsvUnLock(idxName);
   return idx;
@@ -103,10 +93,26 @@ JsVar *jswrap_array_join(JsVar *parent, JsVar *filler) {
 
 /*JSON{ "type":"method", "class": "Array", "name" : "push",
          "description" : "Push a new value onto the end of this array'",
-         "generate_full" : "jsvArrayPush(parent, value)",
-         "params" : [ [ "value", "JsVar", "The value to add"] ],
+         "generate" : "jswrap_array_push",
+         "params" : [ [ "arguments", "JsVarArray", "One or more arguments to add"] ],
          "return" : ["int", "The new size of the array"]
 }*/
+JsVarInt jswrap_array_push(JsVar *parent, JsVar *args) {
+  JsVarInt len = -1;
+  JsvArrayIterator it;
+  jsvArrayIteratorNew(&it, args);
+  while (jsvArrayIteratorHasElement(&it)) {
+    JsVar *el = jsvArrayIteratorGetElement(&it);
+    len = jsvArrayPush(parent, el);
+    jsvUnLock(el);
+    jsvArrayIteratorNext(&it);
+  }
+  jsvArrayIteratorFree(&it);
+  if (len<0) 
+    len = jsvGetArrayLength(parent);
+  return len;
+}
+
 
 /*JSON{ "type":"method", "class": "Array", "name" : "pop",
          "description" : "Pop a new value off of the end of this array",
@@ -203,7 +209,7 @@ JsVar *jswrap_array_splice(JsVar *parent, JsVarInt index, JsVar *howManyVar, JsV
   bool needToAdd = false;
   JsVar *result = jsvNewWithFlags(JSV_ARRAY);
 
-  JsArrayIterator it;
+  JsvArrayIterator it;
   jsvArrayIteratorNew(&it, parent);
   while (jsvArrayIteratorHasElement(&it) && !needToAdd) {
     bool goToNext = true;
@@ -215,8 +221,7 @@ JsVar *jswrap_array_splice(JsVar *parent, JsVarInt index, JsVar *howManyVar, JsV
       } else if (idx<index+howMany) { // must delete
         if (result) { // append to result array
           JsVar *el = jsvArrayIteratorGetElement(&it);
-          jsvArrayPush(result, el);
-          jsvUnLock(el);
+          jsvArrayPushAndUnLock(result, el);
         }
         // delete
         goToNext = false;
@@ -256,6 +261,64 @@ JsVar *jswrap_array_splice(JsVar *parent, JsVarInt index, JsVar *howManyVar, JsV
   return result;
 }
 
+
+/*JSON{ "type":"method", "class": "Array", "name" : "slice",
+         "description" : "Return a copy of a portion of the calling array",
+         "generate" : "jswrap_array_slice",
+         "params" : [ [ "start", "JsVar", "Start index"],
+                      [ "end", "JsVar", "End index (optional)"] ],
+         "return" : ["JsVar", "A new array"]
+}*/
+JsVar *jswrap_array_slice(JsVar *parent, JsVar *startVar, JsVar *endVar) {
+  JsVarInt len = jsvGetArrayLength(parent);
+  JsVarInt start = 0;
+  JsVarInt end = len;
+
+  if (!jsvIsUndefined(startVar))
+    start = jsvGetInteger(startVar);
+
+  if (!jsvIsUndefined(endVar))
+    end = jsvGetInteger(endVar);
+
+  JsVarInt k = 0;
+  JsVarInt final = len;
+  JsVar *array = jsvNewWithFlags(JSV_ARRAY);
+
+  if (!array) return 0;
+
+  if (start<0) k = max((len + start), 0);
+  else k = min(start, len);
+
+  if (end<0) final = max((len + end), 0);
+  else final = min(end, len);
+
+  bool isDone = false;
+
+  JsvArrayIterator it;
+  jsvArrayIteratorNew(&it, parent);
+
+  while (jsvArrayIteratorHasElement(&it) && !isDone) {
+    JsVarInt idx = jsvGetInteger(jsvArrayIteratorGetIndex(&it));
+
+    if (idx < k) {
+      jsvArrayIteratorNext(&it);
+    } else {
+      if (k < final) {
+        jsvArrayPushAndUnLock(array, jsvArrayIteratorGetElement(&it));
+        jsvArrayIteratorNext(&it);
+        k++;
+      } else {
+        isDone = true;
+      }
+    }
+  }
+
+  jsvArrayIteratorFree(&it);
+
+  return array;
+}
+
+
 /*JSON{ "type":"method", "class": "Array", "name" : "forEach",
          "description" : "Executes a provided function once per array element.",
          "generate" : "jswrap_array_forEach",
@@ -265,3 +328,10 @@ JsVar *jswrap_array_splice(JsVar *parent, JsVarInt index, JsVar *howManyVar, JsV
 void jswrap_array_forEach(JsVar *parent, JsVar *funcVar, JsVar *thisVar) {
   _jswrap_array_map_or_forEach(parent, funcVar, thisVar, false);
 }
+
+/*JSON{ "type":"staticmethod", "class": "Array", "name" : "isArray",
+         "description" : "Returns true if the provided object is an array",
+         "generate_full" : "jsvIsArray(var)",
+         "params" : [ [ "var", "JsVar", "The variable to be tested"] ],
+         "return" : ["bool", "True if var is an array, false if not."]
+}*/

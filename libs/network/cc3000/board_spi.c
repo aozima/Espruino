@@ -19,6 +19,9 @@
 
 #include "jshardware.h"
 #include "jsinteractive.h"
+#include "jsparse.h" // for jspIsInterrupted
+
+#include "../network.h"
 
 
 
@@ -53,11 +56,6 @@ typedef struct
 
 
 tSpiInformation sSpiInformation;
-
-
-// buffer for 5 bytes of SPI HEADER
-unsigned char tSpiReadHeader[] = {READ, 0, 0, 0, 0};
-
 
 void SpiWriteDataSynchronous(unsigned char *data, unsigned short size);
 void SpiPauseSpi(void);
@@ -222,7 +220,6 @@ SpiWriteDataSynchronous(unsigned char *data, unsigned short size)
 void
 SpiReadDataSynchronous(unsigned char *data, unsigned short size)
 {
-
   int bSend = 0, bRecv = 0;
   while ((bSend<size || bRecv<size) && !jspIsInterrupted()) {
     if (bSend < size) {
@@ -401,12 +398,15 @@ void cc3000_usynch_callback(long lEventType, char *pcData, unsigned char ucLengt
     } else if (lEventType == HCI_EVNT_WLAN_UNSOL_CONNECT) {
       //jsiConsolePrint("HCI_EVNT_WLAN_UNSOL_CONNECT\n");
       cc3000_state_change("connect");
+      networkState = NETWORKSTATE_CONNECTED;
     } else if (lEventType == HCI_EVNT_WLAN_UNSOL_DISCONNECT) {
       //jsiConsolePrint("HCI_EVNT_WLAN_UNSOL_DISCONNECT\n");
+      networkState = NETWORKSTATE_OFFLINE;
       cc3000_state_change("disconnect");
     } else if (lEventType == HCI_EVNT_WLAN_UNSOL_DHCP) {
       //jsiConsolePrint("HCI_EVNT_WLAN_UNSOL_DHCP\n");
       cc3000_state_change("dhcp");
+      networkState = NETWORKSTATE_ONLINE;
     } else if (lEventType == HCI_EVNT_WLAN_ASYNC_PING_REPORT) {
       jsiConsolePrint("HCI_EVNT_WLAN_ASYNC_PING_REPORT\n");
     } else if (lEventType == HCI_EVNT_BSD_TCP_CLOSE_WAIT) {
@@ -414,7 +414,7 @@ void cc3000_usynch_callback(long lEventType, char *pcData, unsigned char ucLengt
         cc3000_socket_closed |= 1<<socketnum;
       //jsiConsolePrint("HCI_EVNT_BSD_TCP_CLOSE_WAIT\n");
     } else {
-      //jsiConsolePrintHexInt(lEventType);jsiConsolePrint("-usync\n");
+      //jsiConsolePrintf("%x-usync", lEventType);
     }
 }
 

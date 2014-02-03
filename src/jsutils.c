@@ -24,8 +24,7 @@
 #include <math.h>
 #endif
 
-extern double pow ( double, double );
-// just for exponentials
+extern double jswrap_math_pow(double x, double y); // for pow
 
 bool isIDString(const char *s) {
     if (!isAlpha(*s))
@@ -38,7 +37,7 @@ bool isIDString(const char *s) {
     return true;
 }
 
-/** escape a character - if it is required. This may return a reference to a static array, 
+/** escape a character - if it is required. This may return a reference to a static array,
 so you can't store the value it returns in a variable and call it again. */
 const char *escapeCharacter(char ch) {
   if (ch=='\b') return "\\b";
@@ -50,7 +49,7 @@ const char *escapeCharacter(char ch) {
   if (ch=='\\') return "\\\\";
   if (ch=='"') return "\\\"";
   static char buf[5];
-  if (ch<32) {  
+  if (ch<32) {
     /** just encode as hex - it's more understandable
      * and doesn't have the issue of "\16"+"1" != "\161" */
     buf[0]='\\';
@@ -68,7 +67,7 @@ const char *escapeCharacter(char ch) {
 }
 
 /* convert a number in the given radix to an int. if radix=0, autodetect */
-JsVarInt stringToIntWithRadix(const char *s, JsVarInt forceRadix) {
+JsVarInt stringToIntWithRadix(const char *s, int forceRadix, bool *hasError) {
   bool isNegated = false;
   JsVarInt v = 0;
   JsVarInt radix = 10;
@@ -79,27 +78,42 @@ JsVarInt stringToIntWithRadix(const char *s, JsVarInt forceRadix) {
   if (*s == '0') {
     radix = 8;
     s++;
-    if (*s == 'x') {
+
+    // OctalIntegerLiteral: 0o01, 0O01
+    if (*s == 'o' || *s == 'O') {
+      radix = 8;
+      s++;
+
+    // HexIntegerLiteral: 0x01, 0X01
+    } else if (*s == 'x' || *s == 'X') {
       radix = 16;
       s++;
-    } else if (*s == 'b') {
+
+    // BinaryIntegerLiteral: 0b01, 0B01
+    } else if (*s == 'b' || *s == 'B') {
       radix = 2;
       s++;
     }
   }
-  if (forceRadix)
+  if (forceRadix>0 && forceRadix<=36)
     radix = forceRadix;
 
   while (*s) {
+    int digit = 0;
     if (*s >= '0' && *s <= '9')
-      v = (v*radix) + (*s - '0');
+      digit = (*s - '0');
     else if (*s >= 'a' && *s <= 'f')
-      v = (v*radix) + (10 + *s - 'a');
+      digit = (10 + *s - 'a');
     else if (*s >= 'A' && *s <= 'F')
-      v = (v*radix) + (10 + *s - 'A');
+      digit = (10 + *s - 'A');
     else break;
+    if (digit>=radix)
+      break;
+    v = v*radix + digit;
     s++;
   }
+
+  if (hasError) *hasError = *s!=0; // we're ok if we reached the end of the string
 
   if (isNegated) return -v;
   return v;
@@ -107,13 +121,26 @@ JsVarInt stringToIntWithRadix(const char *s, JsVarInt forceRadix) {
 
 /* convert hex, binary, octal or decimal string into an int */
 JsVarInt stringToInt(const char *s) {
-    return stringToIntWithRadix(s,0);
+    return stringToIntWithRadix(s,0,0);
 }
 
-void jsError(const char *message) {
+void jsError(const char *fmt, ...) {
   jsiConsoleRemoveInputLine();
   jsiConsolePrint("ERROR: ");
-  jsiConsolePrint(message);
+  va_list argp;
+  va_start(argp, fmt);
+  vcbprintf((vcbprintf_callback)jsiConsolePrint,0, fmt, argp);
+  va_end(argp);
+  jsiConsolePrint("\n");
+}
+
+void jsErrorInternal(const char *fmt, ...) {
+  jsiConsoleRemoveInputLine();
+  jsiConsolePrint("INTERNAL ERROR: ");
+  va_list argp;
+  va_start(argp, fmt);
+  vcbprintf((vcbprintf_callback)jsiConsolePrint,0, fmt, argp);
+  va_end(argp);
   jsiConsolePrint("\n");
 }
 
@@ -126,10 +153,13 @@ void jsErrorAt(const char *message, struct JsLex *lex, int tokenPos) {
   jsiConsolePrintTokenLineMarker(lex, tokenPos);
 }
 
-void jsWarn(const char *message) {
+void jsWarn(const char *fmt, ...) {
   jsiConsoleRemoveInputLine();
   jsiConsolePrint("WARNING: ");
-  jsiConsolePrint(message);
+  va_list argp;
+  va_start(argp, fmt);
+  vcbprintf((vcbprintf_callback)jsiConsolePrint,0, fmt, argp);
+  va_end(argp);
   jsiConsolePrint("\n");
 }
 
@@ -144,15 +174,10 @@ void jsWarnAt(const char *message, struct JsLex *lex, int tokenPos) {
 void jsAssertFail(const char *file, int line, const char *expr) {
   jsiConsoleRemoveInputLine();
   if (expr) {
-    jsiConsolePrint("ASSERT(");
-    jsiConsolePrint(expr);
-    jsiConsolePrint(") FAILED AT ");
+    jsiConsolePrintf("ASSERT(%s) FAILED AT ", expr);
   } else
     jsiConsolePrint("ASSERT FAILED AT ");
-  jsiConsolePrint(file);
-  jsiConsolePrint(":");
-  jsiConsolePrintInt(line);
-  jsiConsolePrint("\n");
+  jsiConsolePrintf("%s:%d\n",file,line);
 
   jsvTrace(jsvGetRef(jsvFindOrCreateRoot()), 2);
   exit(1);
@@ -168,6 +193,7 @@ void exit(int errcode) {dst;
 int __errno;
 
 void exit(int errcode) {
+    NOT_USED(errcode);
     jsiConsolePrint("EXIT CALLED.\n");
     while (1);
 }
@@ -211,15 +237,7 @@ void *memcpy(void *dst, const void *src, size_t size) {
         return dst;
 }
 
-void *memset(void *dst, int val, size_t size) {
-  unsigned char *d = (unsigned char*)dst;
-  int i;
-  for (i=0;i<size;i++)
-    d[i]=val;
-  return dst;
-}
-
-unsigned int rand() { 
+unsigned int rand() {
     static unsigned int m_w = 0xDEADBEEF;    /* must not be zero */
     static unsigned int m_z = 0xCAFEBABE;    /* must not be zero */
 
@@ -230,10 +248,15 @@ unsigned int rand() {
 #endif
 
 JsVarFloat stringToFloat(const char *s) {
+  // skip whitespace (strange parseFloat behaviour)
+  while (isWhitespace(*s)) s++;
+
+  const char *numberStart = s;
+
   bool isNegated = false;
   JsVarFloat v = 0;
   JsVarFloat mul = 0.1;
-  if (*s == '-') { 
+  if (*s == '-') {
     isNegated = true;
     s++;
   }
@@ -273,10 +296,18 @@ JsVarFloat stringToFloat(const char *s) {
       s++;
     }
     if (isENegated) e=-e;
-    v = v * pow(10, e);
+    // TODO: faster INTEGER pow? Normal pow has floating point inaccuracies
+    while (e>0) { 
+      v*=10; 
+      e--;
+    }
+    while (e<0) { 
+      v/=10; 
+      e++;
+    }
   }
-  // check we have parsed everything
-  assert(*s==0);
+  // check that we managed to parse something at least
+  if (numberStart==s) return NAN;
 
   if (isNegated) return -v;
   return v;
@@ -304,39 +335,52 @@ void itoa(JsVarInt vals,char *str,unsigned int base) {
     val -= v*d;
     *(str++) = itoch((int)v);
     d /= base;
-  }  
+  }
   *(str++)=itoch((int)val);
   *(str++)=0;
 }
 #endif
 
-void ftoa(JsVarFloat val,char *str) {
-  if (isnan(val)) strncpy(str,"NaN",4);
+void ftoa_bounded(JsVarFloat val,char *str, size_t len) {
+  const JsVarFloat stopAtError = 0.0000001;
+  if (isnan(val)) strncpy(str,"NaN",len);
   else if (!isfinite(val)) {
-    if (val<0) strncpy(str,"-Infinity",10);
-    else strncpy(str,"Infinity",10);
+    if (val<0) strncpy(str,"-Infinity",len);
+    else strncpy(str,"Infinity",len);
   } else {
     const JsVarFloat base = 10;
     if (val<0) {
-      *(str++)='-';
+      if (--len <= 0) { *str=0; return; } // bounds check
+      *(str++) = '-';
       val = -val;
     }
+
+    // what if we're really close to an integer? Just use that...      
+    if (((JsVarInt)(val+stopAtError)) == (1+(JsVarInt)val))
+      val = (JsVarFloat)(1+(JsVarInt)val);
+
     JsVarFloat d = 1;
     while (d*base <= val) d*=base;
     while (d >= 1) {
       int v = (int)(val / d);
       val -= v*d;
-      *(str++)=itoch(v);
+      if (--len <= 0) { *str=0; return; } // bounds check
+      *(str++) = itoch(v);
       d /= base;
     }
   #ifndef USE_NO_FLOATS
     if (val>0) {
+      if (--len <= 0) { *str=0; return; } // bounds check
       *(str++)='.';
-      while (val>0.000001) {
-        int v = (int)((val / d) + 0.0000005);
-        val -= v*d;
-        *(str++)=itoch(v);
-        d /= base;
+      val*=10;
+      while (val > stopAtError) {         
+        int v = (int)(val+0.00000001);
+        val = (val-v)*10;
+        if (--len <= 0) { *str=0; return; } // bounds check
+        if (v==10) {
+          *(str++)='9';  
+        } else
+          *(str++)=itoch(v);
       }
     }
   #endif
@@ -352,3 +396,62 @@ JsVarFloat wrapAround(JsVarFloat val, JsVarFloat size) {
   val = val - (int)val;
   return val * size;
 }
+
+/** Espruino-special printf with a callback
+ * Supported are:
+ *   %d = int
+ *   %x = int as hex
+ *   %L = JsVarInt
+ *   %Lx = JsVarInt as hex
+ *   %f = JsVarFloat
+ *   %s = string (char *)
+ *   %c = char
+ *   %v = JsVar * (prints var as string)
+ *   %t = JsVar * (prints type of var)
+ *   %p = Pin
+ *
+ * Anything else will assert
+ */
+void vcbprintf(vcbprintf_callback user_callback, void *user_data, const char *fmt, va_list argp) {
+  char buf[32];
+  while (*fmt) {
+    if (*fmt == '%') {
+      fmt++;
+      switch (*fmt++) {
+      case 'd': itoa(va_arg(argp, int), buf, 10); user_callback(buf,user_data); break;
+      case 'x': itoa(va_arg(argp, int), buf, 16); user_callback(buf,user_data); break;
+      case 'L': {
+        unsigned int rad = 10;
+        if (*fmt=='x') { rad=16; fmt++; }
+        itoa(va_arg(argp, JsVarInt), buf, rad); user_callback(buf,user_data);
+      } break;
+      case 'f': ftoa_bounded(va_arg(argp, JsVarFloat), buf, sizeof(buf)); user_callback(buf,user_data);  break;
+      case 's': user_callback(va_arg(argp, char *), user_data); break;
+      case 'c': buf[0]=(char)va_arg(argp, int/*char*/);buf[1]=0; user_callback(buf, user_data); break;
+      case 'v': {
+        JsVar *v = jsvAsString(va_arg(argp, JsVar*), false/*no unlock*/);
+        buf[1] = 0;
+        JsvStringIterator it;
+        jsvStringIteratorNew(&it, v, 0);
+        // OPT: this could be faster than it is (sending whole blocks at once)
+        while (jsvStringIteratorHasChar(&it)) {
+          buf[0] = jsvStringIteratorGetChar(&it);
+          user_callback(buf,user_data);
+          jsvStringIteratorNext(&it);
+        }
+        jsvStringIteratorFree(&it);
+        jsvUnLock(v);
+      } break;
+      case 't': user_callback(jsvGetTypeOf(va_arg(argp, JsVar*)), user_data); break;
+      case 'p': jshGetPinString(buf, (Pin)va_arg(argp, int/*Pin*/)); user_callback(buf, user_data); break;
+      default: assert(0); return; // eep
+      }
+    } else {
+      buf[0] = *(fmt++);
+      buf[1] = 0;
+      user_callback(&buf[0], user_data);
+    }
+  }
+}
+
+

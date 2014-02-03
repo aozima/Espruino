@@ -1,24 +1,25 @@
-#ifndef JSHARDWARE_PININFO
-#define JSHARDWARE_PININFO
+/*
+ * This file is part of Espruino, a JavaScript interpreter for Microcontrollers
+ *
+ * Copyright (C) 2013 Gordon Williams <gw@pur3.co.uk>
+ *
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ *
+ * ----------------------------------------------------------------------------
+ * Utilities and definitions for handling Pins
+ * ----------------------------------------------------------------------------
+ */
+
+#ifndef JSPIN_H
+#define JSPIN_H
 
 #include "jsutils.h"
+#include "jsvar.h"
 
-extern const int JSH_PORTA_COUNT;
-extern const int JSH_PORTB_COUNT;
-extern const int JSH_PORTC_COUNT;
-extern const int JSH_PORTD_COUNT;
-extern const int JSH_PORTE_COUNT;
-extern const int JSH_PORTF_COUNT;
-extern const int JSH_PORTG_COUNT;
-extern const int JSH_PORTH_COUNT;
-extern const int JSH_PORTA_OFFSET;
-extern const int JSH_PORTB_OFFSET;
-extern const int JSH_PORTC_OFFSET;
-extern const int JSH_PORTD_OFFSET;
-extern const int JSH_PORTE_OFFSET;
-extern const int JSH_PORTF_OFFSET;
-extern const int JSH_PORTG_OFFSET;
-extern const int JSH_PORTH_OFFSET;
+typedef unsigned char Pin; ///< for specifying pins for hardware
+#define PIN_UNDEFINED ((Pin)0xFF)
 
 typedef enum {
   JSH_PORT_NONE,
@@ -49,6 +50,24 @@ typedef enum {
   JSH_PIN13,
   JSH_PIN14,
   JSH_PIN15,
+#ifndef ARM
+  JSH_PIN16,
+  JSH_PIN17,
+  JSH_PIN18,
+  JSH_PIN19,
+  JSH_PIN20,
+  JSH_PIN21,
+  JSH_PIN22,
+  JSH_PIN23,
+  JSH_PIN24,
+  JSH_PIN25,
+  JSH_PIN26,
+  JSH_PIN27,
+  JSH_PIN28,
+  JSH_PIN29,
+  JSH_PIN30,
+  JSH_PIN31,
+#endif
 } PACKED_FLAGS JsvPinInfoPin;
 
 typedef enum {
@@ -78,6 +97,7 @@ typedef enum {
   JSH_ANALOG_CH14,
   JSH_ANALOG_CH15,
   JSH_ANALOG_CH16,
+  JSH_ANALOG_CH17,
 
   JSH_MASK_ANALOG_CH  = 31,
   JSH_MASK_ANALOG_ADC = JSH_ANALOG1|JSH_ANALOG2|JSH_ANALOG3|JSH_ANALOG4,
@@ -141,6 +161,7 @@ typedef enum {
   JSH_USARTMAX = JSH_USART6,
 
   // ---------------------------- JSH_MASK_INFO
+
   JSH_TIMER_CH1 = 0x0000,
   JSH_TIMER_CH2 = 0x1000,
   JSH_TIMER_CH3 = 0x2000,
@@ -169,12 +190,12 @@ typedef enum {
 
 #define JSH_PINFUNCTION_IS_TIMER(F) ( \
   (((F)&JSH_MASK_TYPE)>=JSH_TIMER1) && \
-  (((F)&JSH_MASK_TYPE)==JSH_TIMER18))
+  (((F)&JSH_MASK_TYPE)<=JSH_TIMER18))
 #define JSH_PINFUNCTION_IS_DAC(F) ( \
   (((F)&JSH_MASK_TYPE)==JSH_DAC) || \
 0 )
 #define JSH_PINFUNCTION_IS_USART(F) ( \
-  (((F)&JSH_MASK_TYPE)>=JSH_USART1) || \
+  (((F)&JSH_MASK_TYPE)>=JSH_USART1) && \
   (((F)&JSH_MASK_TYPE)<=JSH_USART6))
 #define JSH_PINFUNCTION_IS_I2C(F) ( \
   (((F)&JSH_MASK_TYPE)>=JSH_I2C1) && \
@@ -183,17 +204,26 @@ typedef enum {
   (((F)&JSH_MASK_TYPE)>=JSH_SPI1) && \
   (((F)&JSH_MASK_TYPE)<=JSH_SPIMAX))
 
+bool jshIsPinValid(Pin pin); ///< is the specific pin actually valid?
 
-#define JSH_PININFO_FUNCTIONS 6
+/// Given a string, convert it to a pin ID (or -1 if it doesn't exist)
+Pin jshGetPinFromString(const char *s);
+/** Write the pin name to a string. String must have at least 8 characters (to be safe) */
+void jshGetPinString(char *result, Pin pin);
 
-typedef struct JshPinInfo {
-  JsvPinInfoPort port;
-  JsvPinInfoPin pin;
-  JsvPinInfoAnalog analog; // TODO: maybe we don't need to store analogs separately
-  JshPinFunction functions[JSH_PININFO_FUNCTIONS];
-} PACKED_FLAGS JshPinInfo;
+/// Given a var, convert it to a pin ID (or -1 if it doesn't exist). safe for undefined!
+static inline Pin jshGetPinFromVar(JsVar *pinv) {
+  if (jsvIsString(pinv) && pinv->varData.str[5]==0/*should never be more than 4 chars!*/) {
+    return jshGetPinFromString(&pinv->varData.str[0]);
+  } else if (jsvIsInt(pinv) /* This also tests for the Pin datatype */) {
+    return (Pin)jsvGetInteger(pinv);
+  } else return PIN_UNDEFINED;
+}
 
-extern const int pinInfoCount;
-extern const JshPinInfo pinInfo[];
+static inline Pin jshGetPinFromVarAndUnLock(JsVar *pinv) {
+  Pin pin = jshGetPinFromVar(pinv);
+  jsvUnLock(pinv);
+  return pin;
+}
 
-#endif //JSHARDWARE_PININFO
+#endif //JSPIN_H

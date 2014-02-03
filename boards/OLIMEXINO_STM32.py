@@ -19,9 +19,10 @@ info = {
  'name' : "Olimexino STM32 / Leaflabs Maple",
  'link' :  [ "https://www.olimex.com/Products/Duino/STM32/OLIMEXINO-STM32/", "http://leaflabs.com/devices/maple/" ],
  'variables' : 715,
+ 'binary_name' : 'espruino_%v_olimexino_stm32.bin',
 };
 chip = {
-  'part' : "STM32F103RB", #T6
+  'part' : "STM32F103RBT6", 
   'family' : "STM32F1",
   'package' : "LQFP64",
   'ram' : 20,
@@ -60,7 +61,7 @@ devices = {
   'BTN1' : { 'pin' : 'D38' }, # 'C9'
   'USB' : { 'pin_disc' :  'D39',
             'pin_dm' : 'D40',
-            'pin_bp' : 'D41' 
+            'pin_dp' : 'D41' 
           },
   'SD' :  { 'pin_cs' :  'D25',#'D2',
             'pin_di' :  'D34',#'B15',

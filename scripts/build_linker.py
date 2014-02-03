@@ -29,7 +29,7 @@ import pinutils;
 
 # -----------------------------------------------------------------------------------------
 def die(err):
-  print("ERROR: "+err)
+  sys.stderr.write("ERROR: "+err+"\n")
   sys.exit(1)
 # -----------------------------------------------------------------------------------------
 
@@ -59,6 +59,10 @@ print "IS_BOOTLOADER "+str(IS_BOOTLOADER)
 print "IS_USING_BOOTLOADER "+str(IS_USING_BOOTLOADER)
 # import the board def
 board = importlib.import_module(boardname)
+
+# Check what board py says
+if ("bootloader" in board.info and board.info["bootloader"]!=0) != (IS_BOOTLOADER or IS_USING_BOOTLOADER):
+  die("Makefile and BOARD.py do not agree over bootloaderiness")
 
 # -----------------------------------------------------------------------------------------
 linkerFile = open(linkerFilename, 'w')

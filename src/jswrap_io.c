@@ -68,7 +68,7 @@
          "params" : [ [ "pin", "pin", "The pin to use"],
                       [ "value", "float", "A value between 0 and 1"],
                       [ "options", "JsVar", ["An object containing options.",
-                                            "Currently only freq (pulse frequency in Hz) is available: ```analogWrite(LED1,0.5,{ freq : 10 });``` ",
+                                            "Currently only freq (pulse frequency in Hz) is available: ```analogWrite(A0,0.5,{ freq : 10 });``` ",
                                             "Note that specifying a frequency will force PWM output, even if the pin has a DAC"] ]  ]
 }*/
 void jswrap_io_analogWrite(Pin pin, JsVarFloat value, JsVar *options) {
@@ -156,14 +156,20 @@ JsVarInt jswrap_io_digitalRead(JsVar *pinVar) {
 /*JSON{ "type":"function", "name" : "pinMode",
          "description" : ["Set the mode of the given pin - note that digitalRead/digitalWrite/etc set this automatically unless pinMode has been called first. If you want digitalRead/etc to set the pin mode automatically after you have called pinMode, simply call it again with no mode argument: ```pinMode(pin)```" ],
          "generate" : "jswrap_io_pinMode",
-         "params" : [ [ "pin", "pin", "The pin to use"], [ "mode", "JsVar", "The mode - a string that is either input, output, input_pullup, or input_pulldown. Do not include this argument if you want to revert to automatic pin mode setting."] ]
+         "params" : [ [ "pin", "pin", "The pin to use"], [ "mode", "JsVar", "The mode - a string that is either 'input', 'output', 'input_pullup', or 'input_pulldown'. Do not include this argument if you want to revert to automatic pin mode setting."] ]
 }*/
 void jswrap_io_pinMode(Pin pin, JsVar *mode) {
+  if (!jshIsPinValid(pin)) {
+    jsError("Invalid pin");
+    return;
+  }
   JshPinState m = JSHPINSTATE_UNDEFINED;
-  if (jsvIsStringEqual(mode, "input")) m = JSHPINSTATE_GPIO_IN;
-  if (jsvIsStringEqual(mode, "input_pullup")) m = JSHPINSTATE_GPIO_IN_PULLUP;
-  if (jsvIsStringEqual(mode, "input_pulldown")) m = JSHPINSTATE_GPIO_IN_PULLDOWN;
-  if (jsvIsStringEqual(mode, "output")) m = JSHPINSTATE_GPIO_OUT;
+  if (jsvIsString(mode)) {
+    if (jsvIsStringEqual(mode, "input")) m = JSHPINSTATE_GPIO_IN;
+    if (jsvIsStringEqual(mode, "input_pullup")) m = JSHPINSTATE_GPIO_IN_PULLUP;
+    if (jsvIsStringEqual(mode, "input_pulldown")) m = JSHPINSTATE_GPIO_IN_PULLDOWN;
+    if (jsvIsStringEqual(mode, "output")) m = JSHPINSTATE_GPIO_OUT;
+  }
   if (m != JSHPINSTATE_UNDEFINED) {
     jshSetPinStateIsManual(pin, true);
     jshPinSetState(pin, m);
@@ -406,7 +412,7 @@ void jswrap_interface_clearWatch(JsVar *idVar) {
 
       // Now check if this pin is still being watched
       bool stillWatched = false;
-      JsArrayIterator it;
+      JsvArrayIterator it;
       jsvArrayIteratorNew(&it, watchArrayPtr);
       while (jsvArrayIteratorHasElement(&it)) {
         JsVar *watchPtr = jsvArrayIteratorGetElement(&it);

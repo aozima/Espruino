@@ -17,6 +17,8 @@ import pinutils;
 info = {
  'name' : "STM32 2.8 inch LCD Board (RBT6)",
  'variables' : 510, # FIXME we could get 700, but we don't have enough flash
+ 'serial_bootloader' : True,
+ 'binary_name' : 'espruino_%v_hystm32_28_rb.bin',
 };
 chip = {
   'part' : "STM32F103RB", #T6
@@ -54,7 +56,7 @@ devices = {
   'POT1' : { 'pin' : 'B0' },
   'USB' : { 'pin_disc' :  'D2',
             'pin_dm' : 'A11',
-            'pin_bp' : 'A12' },
+            'pin_dp' : 'A12' },
   'SD' :  { 'pin_cs' :  'B7',
             'pin_sck' : 'A5',
             'pin_miso' : 'A6',

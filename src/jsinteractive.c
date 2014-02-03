@@ -132,42 +132,15 @@ void jsiConsolePrint(const char *str) {
 }
 
 void jsiConsolePrintf(const char *fmt, ...) {
-  char buf[32];
-  JsVar *v;
   va_list argp;
   va_start(argp, fmt);
-
-  while (*fmt) {
-    if (*fmt == '%') {
-      fmt++;
-      switch (*fmt++) {
-      case 'd': itoa(va_arg(argp, int), buf, 10); jsiConsolePrint(buf); break;
-      case 'x': itoa(va_arg(argp, int), buf, 16); jsiConsolePrint(buf); break;
-      case 'l': itoa(va_arg(argp, JsVarInt), buf, 10); jsiConsolePrint(buf);  break;
-      case 'f': ftoa(va_arg(argp, JsVarFloat), buf); jsiConsolePrint(buf);  break;
-      case 's': jsiConsolePrint(va_arg(argp, char *)); break;
-      case 'c': jsiConsolePrintChar(va_arg(argp, char)); break;
-      case 'v': v = jsvAsString(va_arg(argp, JsVar*), true); jsiConsolePrintStringVar(v); jsvUnLock(v); break;
-      default: assert(0); return; // eep
-      }
-      jsiConsolePrintChar('\r');
-    } else {
-      if (*fmt == '\n') jsiConsolePrintChar('\r');
-      jsiConsolePrintChar(*(fmt++));
-    }
-  }
+  vcbprintf((vcbprintf_callback)jsiConsolePrint,0, fmt, argp);
   va_end(argp);
 }
 
 void jsiConsolePrintInt(JsVarInt d) {
     char buf[32];
     itoa(d, buf, 10);
-    jsiConsolePrint(buf);
-}
-
-void jsiConsolePrintHexInt(JsVarInt d) {
-    char buf[32];    
-    itoa(d, buf, 16);
     jsiConsolePrint(buf);
 }
 
@@ -341,14 +314,7 @@ void jsiReturnInputLine() {
 void jsiConsolePrintPosition(struct JsLex *lex, int tokenPos) {
   int line,col;
   jsvGetLineAndCol(lex->sourceVar, tokenPos, &line, &col);
-  jsiConsolePrint("line ");
-  jsiConsolePrintInt(line);
-  jsiConsolePrint(" col ");
-  jsiConsolePrintInt(col);
-  jsiConsolePrint("\n");
-/*  jsiConsolePrint(" (char ");
-  jsiConsolePrintInt(tokenPos);
-  jsiConsolePrint(")\n");*/
+  jsiConsolePrintf("line %d col %d\n",line,col);
 }
 
 void jsiConsolePrintTokenLineMarker(struct JsLex *lex, int tokenPos) {
@@ -357,7 +323,7 @@ void jsiConsolePrintTokenLineMarker(struct JsLex *lex, int tokenPos) {
   int startOfLine = jsvGetIndexFromLineAndCol(lex->sourceVar, line, 1);
   jsiConsolePrintStringVarUntilEOL(lex->sourceVar, startOfLine, false);
   jsiConsolePrint("\n");
-  while (col-- > 1) jsiConsolePrintChar(' ');
+  while (col-- > 0) jsiConsolePrintChar(' ');
   jsiConsolePrintChar('^');
   jsiConsolePrint("\n");
 }
@@ -383,13 +349,13 @@ void jsiSetBusy(JsiBusyDevice device, bool isBusy) {
   else
     business &= (JsiBusyDevice)~device;
 
-  if (pinBusyIndicator >= 0)
+  if (pinBusyIndicator != PIN_UNDEFINED)
     jshPinOutput(pinBusyIndicator, business!=0);
 }
 
 void jsiSetSleep(bool isSleep) {
-  if (pinSleepIndicator >= 0)
-    jshPinOutput(pinSleepIndicator, isSleep);
+  if (pinSleepIndicator != PIN_UNDEFINED)
+    jshPinOutput(pinSleepIndicator, !isSleep);
 }
 
 static JsVarRef _jsiInitNamedArray(const char *name) {
@@ -446,6 +412,17 @@ void jsiSoftInit() {
   timerArray = _jsiInitNamedArray(JSI_TIMERS_NAME);
   watchArray = _jsiInitNamedArray(JSI_WATCHES_NAME);
 
+  // Now run initialisation code
+  JsVar *initName = jsvFindChildFromString(p.root, JSI_INIT_CODE_NAME, false);
+  if (initName && initName->firstChild) {
+    //jsiConsolePrint("Running initialisation code...\n");
+    JsVar *initCode = jsvLock(initName->firstChild);
+    jsvUnLock(jspEvaluateVar(&p, initCode, 0));
+    jsvUnLock(initCode);
+    jsvRemoveChild(p.root, initName);
+  }
+  jsvUnLock(initName);
+
   // Check any existing watches and set up interrupts for them
   if (watchArray) {
     JsVar *watchArrayPtr = jsvLock(watchArray);
@@ -477,16 +454,6 @@ void jsiSoftInit() {
     }
     jsvUnLock(timerArrayPtr);
   }
-  // Now run initialisation code
-  JsVar *initName = jsvFindChildFromString(p.root, JSI_INIT_CODE_NAME, false);
-  if (initName && initName->firstChild) {
-    //jsiConsolePrint("Running initialisation code...\n");
-    JsVar *initCode = jsvLock(initName->firstChild);
-    jsvUnLock(jspEvaluateVar(&p, initCode, 0));
-    jsvUnLock(initCode);
-    jsvRemoveChild(p.root, initName);
-  }
-  jsvUnLock(initName);
   // And look for onInit function
   JsVar *onInit = jsvFindChildFromString(p.root, JSI_ONINIT_NAME, false);
   if (onInit && onInit->firstChild) {
@@ -520,11 +487,9 @@ void jsiAppendSerialInitialisation(JsVar *str, const char *serialName, bool addC
     JsVar *baud = jsvObjectGetChild(serialVar, USART_BAUDRATE_NAME, 0);
     JsVar *options = jsvObjectGetChild(serialVar, DEVICE_OPTIONS_NAME, 0);
     if (baud || options) {
-      jsvAppendString(str, serialName);
-      jsvAppendString(str, ".setup(");
       JsVarInt baudrate = jsvGetInteger(baud);
       if (baudrate <= 0) baudrate = DEFAULT_BAUD_RATE;
-      jsvAppendInteger(str, baudrate);
+      jsvAppendPrintf(str, "%s.setup(%d", serialName, baudrate);
       if (jsvIsObject(options)) {
         jsvAppendString(str, ", ");
         jsfGetJSON(options, str);
@@ -538,12 +503,12 @@ void jsiAppendSerialInitialisation(JsVar *str, const char *serialName, bool addC
 }
 
 /** Append the code required to initialise a SPI port to this string */
-void jsiAppendSPIInitialisation(JsVar *str, const char *spiName) {
-  JsVar *spiVar = jsvObjectGetChild(p.root, spiName, 0);
-  if (spiVar) {
-    JsVar *options = jsvObjectGetChild(spiVar, DEVICE_OPTIONS_NAME, 0);
+void jsiAppendDeviceInitialisation(JsVar *str, const char *deviceName) {
+  JsVar *deviceVar = jsvObjectGetChild(p.root, deviceName, 0);
+  if (deviceVar) {
+    JsVar *options = jsvObjectGetChild(deviceVar, DEVICE_OPTIONS_NAME, 0);
     if (options) {
-      jsvAppendString(str, spiName);
+      jsvAppendString(str, deviceName);
       jsvAppendString(str, ".setup(");
       if (jsvIsObject(options)) {
         jsfGetJSON(options, str);
@@ -551,7 +516,7 @@ void jsiAppendSPIInitialisation(JsVar *str, const char *spiName) {
       jsvAppendString(str, ");\n");
     }
     jsvUnLock(options);
-    jsvUnLock(spiVar);
+    jsvUnLock(deviceVar);
   }
 }
 
@@ -559,14 +524,13 @@ void jsiAppendSPIInitialisation(JsVar *str, const char *spiName) {
 void jsiAppendHardwareInitialisation(JsVar *str, bool addCallbacks) {
   if (!echo) jsvAppendString(str, "echo(0);");
   if (pinBusyIndicator != DEFAULT_BUSY_PIN_INDICATOR) {
-    jsvAppendString(str, "setBusyIndicator(");
-    jsvAppendPin(str, pinBusyIndicator);
-    jsvAppendString(str, ");\n");
+    jsvAppendPrintf(str, "setBusyIndicator(%p);\n", pinBusyIndicator);
   }
   if (pinSleepIndicator != DEFAULT_BUSY_PIN_INDICATOR) {
-    jsvAppendString(str, "setSleepIndicator(");
-    jsvAppendPin(str, pinSleepIndicator);
-    jsvAppendString(str, ");\n");
+    jsvAppendPrintf(str, "setSleepIndicator(%p);\n", pinSleepIndicator);
+  }
+  if (allowDeepSleep) {
+    jsvAppendPrintf(str, "setDeepSleep(1);\n");
   }
 
   jsiAppendSerialInitialisation(str, "USB", addCallbacks);
@@ -574,7 +538,27 @@ void jsiAppendHardwareInitialisation(JsVar *str, bool addCallbacks) {
   for (i=0;i<USARTS;i++)
     jsiAppendSerialInitialisation(str, jshGetDeviceString(EV_SERIAL1+i), addCallbacks);
   for (i=0;i<SPIS;i++)
-     jsiAppendSPIInitialisation(str, jshGetDeviceString(EV_SPI1+i));
+    jsiAppendDeviceInitialisation(str, jshGetDeviceString(EV_SPI1+i));
+  for (i=0;i<I2CS;i++)
+    jsiAppendDeviceInitialisation(str, jshGetDeviceString(EV_I2C1+i));
+  // pins
+  Pin pin;
+  for (pin=0;jshIsPinValid(pin) && pin<255;pin++) {
+    if (IS_PIN_USED_INTERNALLY(pin)) continue;
+    JshPinState state = jshPinGetState(pin);
+    JshPinState statem = state&JSHPINSTATE_MASK;
+    if (statem == JSHPINSTATE_GPIO_OUT) {
+      bool isOn = (state&JSHPINSTATE_PIN_IS_ON)!=0;
+      if (!isOn && IS_PIN_A_LED(pin)) continue;
+      jsvAppendPrintf(str, "digitalWrite(%p,%d);\n",pin,isOn?1:0);
+    } else if (/*statem == JSHPINSTATE_GPIO_IN ||*/statem == JSHPINSTATE_GPIO_IN_PULLUP || statem == JSHPINSTATE_GPIO_IN_PULLDOWN) {
+      // don't bother with normal inputs, as they come up in this state (ish) anyway
+      const char *s = "";
+      if (statem == JSHPINSTATE_GPIO_IN_PULLUP) s="_pullup";
+      if (statem == JSHPINSTATE_GPIO_IN_PULLDOWN) s="_pulldown";
+      jsvAppendPrintf(str, "pinMode(%p,\"input%s\");\n",pin,s);
+    }
+  }
 }
 
 // Used when shutting down before flashing
@@ -611,18 +595,12 @@ void jsiSoftKill() {
     watchArray=0;
   }
   // Save initialisation information
-  JsVar *initName = jsvFindChildFromString(p.root, JSI_INIT_CODE_NAME, true);
-  if (initName->firstChild) {
-    jsvUnRefRef(initName->firstChild); 
-    initName->firstChild = 0;
-  }
   JsVar *initCode = jsvNewFromEmptyString();
   if (initCode) { // out of memory
-    initName->firstChild = jsvGetRef(jsvRef(initCode));
     jsiAppendHardwareInitialisation(initCode, false);
+    jsvObjectSetChild(p.root, JSI_INIT_CODE_NAME, initCode);
     jsvUnLock(initCode);
   }
-  jsvUnLock(initName);
 
 #ifdef USE_NET
   httpKill();
@@ -661,7 +639,8 @@ void jsiInit(bool autoLoad) {
 
   /* If flash contains any code, then we should
      Try and load from it... */
-  if (autoLoad && jshFlashContainsCode()) {
+  bool loadFlash = autoLoad && jshFlashContainsCode();
+  if (loadFlash) {
     jspSoftKill(&p);
     jsvSoftKill();
     jshLoadFromFlash();
@@ -674,22 +653,21 @@ void jsiInit(bool autoLoad) {
   jsiSoftInit();
 
   if (echo) { // intentionally not using jsiShowInputLine()
+    if (!loadFlash) {
+      jsiConsolePrint(
 #ifndef LINUX
-    // set up terminal to avoid word wrap
-    jsiConsolePrint("\e[?7l");
+              // set up terminal to avoid word wrap
+              "\e[?7l"
 #endif
-    // rectangles @ http://www.network-science.de/ascii/
-    jsiConsolePrint("\n"
-              "   _____                 _ \n"
-              "  |   __|___ ___ ___ _ _|_|___ ___ \n"
-              "  |   __|_ -| . |  _| | | |   | . |\n"
-              "  |_____|___|  _|_| |___|_|_|_|___|");
-    jsiConsolePrint("\n"
-              "            |_|   http://www.espruino.com\n"
-              "  "JS_VERSION" Copyright 2013 Gordon Williams\n"
-              "-------------------------------------------\n"
-              "                       KickStarter Version\n"
-              "-------------------------------------------\n");
+              // rectangles @ http://www.network-science.de/ascii/
+              "\n"
+              " _____                 _ \n"
+              "|   __|___ ___ ___ _ _|_|___ ___ \n"
+              "|   __|_ -| . |  _| | | |   | . |\n"
+              "|_____|___|  _|_| |___|_|_|_|___|\n"    
+              "          |_| http://espruino.com\n"
+              " "JS_VERSION" Copyright 2014 G.Williams\n");
+    }
     jsiConsolePrint("\n>");
   }
 }
@@ -708,12 +686,14 @@ int jsiCountBracketsInInput() {
 
   JsLex lex;
   jslInit(&lex, inputLine);
-  while (lex.tk!=LEX_EOF) {
+  while (lex.tk!=LEX_EOF && lex.tk!=LEX_UNFINISHED_COMMENT) {
     if (lex.tk=='{' || lex.tk=='[' || lex.tk=='(') brackets++;
     if (lex.tk=='}' || lex.tk==']' || lex.tk==')') brackets--;
     if (brackets<0) break; // closing bracket before opening!
     jslGetNextToken(&lex);
   }
+  if (lex.tk==LEX_UNFINISHED_COMMENT)
+    brackets=1000; // if there's an unfinished comment, we're in the middle of something
   jslKill(&lex);
 
   return brackets;
@@ -755,7 +735,6 @@ void jsiHistoryAddLine(JsVar *newLine) {
   }
   // put it back in front
   jsvArrayPush(history, newLine);
-  
   jsvUnLock(history);
 }
 
@@ -933,7 +912,7 @@ bool jsiAtEndOfInputLine() {
 }
 
 void jsiHandleChar(char ch) {
-  //jsiConsolePrint("  ["); jsiConsolePrintInt(inputState);jsiConsolePrint(":");jsiConsolePrintInt(ch); jsiConsolePrint("]  \n");
+  //jsiConsolePrintf("[%d:%d]\n", inputState, ch);
   //
   // special stuff
   // 27 then 91 then 68 - left
@@ -1042,7 +1021,7 @@ void jsiHandleChar(char ch) {
     } else if (ch == '\n' && inputState == IS_HAD_R) {
       inputState = IS_NONE; //  ignore \ r\n - we already handled it all on \r
     } else if (ch == '\r' || ch == '\n') { 
-      if (jsiAtEndOfInputLine()) { // ignore unless at EOL
+      if (jsiAtEndOfInputLine()) { // at EOL so we need to figure out if we can execute or not
         if (ch == '\r') inputState = IS_HAD_R;
         if (jsiCountBracketsInInput()<=0) { // actually execute!
           if (jsiShowInputLine()) {
@@ -1070,6 +1049,8 @@ void jsiHandleChar(char ch) {
           jsvUnLock(v);
           // console will be returned next time around the input loop
         } else {
+          // Brackets aren't all closed, so we're going to append a newline
+          // without executing
           if (jsiShowInputLine()) jsiConsolePrint("\n:");
           jsiIsAboutToEditInputLine();
           jsvAppendCharacter(inputLine, '\n');
@@ -1128,8 +1109,7 @@ void jsiQueueEvents(JsVarRef callbacks, JsVar *arg0, JsVar *arg1) { // array of 
       jsvUnLock(jsvAddNamedChild(event, callbackVar, "func"));
       if (arg0) jsvUnLock(jsvAddNamedChild(event, arg0, "arg0"));
       if (arg1) jsvUnLock(jsvAddNamedChild(event, arg1, "arg1"));
-      jsvArrayPush(events, event);
-      jsvUnLock(event);
+      jsvArrayPushAndUnLock(events, event);
     }
     jsvUnLock(callbackVar);
   } else {
@@ -1148,8 +1128,7 @@ void jsiQueueEvents(JsVarRef callbacks, JsVar *arg0, JsVar *arg1) { // array of 
         if (arg0) jsvUnLock(jsvAddNamedChild(event, arg0, "arg0"));
         if (arg1) jsvUnLock(jsvAddNamedChild(event, arg1, "arg1"));
         // add event to the events list
-        jsvArrayPush(events, event);
-        jsvUnLock(event);
+        jsvArrayPushAndUnLock(events, event);
         // go to next callback
       }
       next = child->nextSibling;
@@ -1436,7 +1415,13 @@ void jsiIdle() {
 
     }
     jsvUnLock(timerTime);
+    JsVarRef currentTimer = timerNamePtr->nextSibling;
     jsvUnLock(timerNamePtr);
+    if (currentTimer != timer) {
+      // Whoa! the timer list has changed!
+      minTimeUntilNext = 0; // make sure we don't sleep
+      break; // get out of here, sort it out next time around idle loop
+    }
   }
   jsvUnLock(timerArrayPtr);
 
@@ -1517,11 +1502,9 @@ void jsiIdle() {
       !jshIsUSBSERIALConnected() && // if USB is on, no point sleeping (later, sleep might be more drastic)
 #endif
       !jshHasEvents() && //no events have arrived in the mean time
-      !jshHasTransmitData() && //nothing left to send over serial?
-      minTimeUntilNext > SYSTICK_RANGE*5/4) { // we are sure we won't miss anything - leave a little leeway (SysTick will wake us up!)
-    jsiSetSleep(true);
-    jshSleep();
-    jsiSetSleep(false);
+      !jshHasTransmitData()/* && //nothing left to send over serial?
+      minTimeUntilNext > SYSTICK_RANGE*5/4*/) { // we are sure we won't miss anything - leave a little leeway (SysTick will wake us up!)
+    jshSleep(minTimeUntilNext);
   }
 }
 

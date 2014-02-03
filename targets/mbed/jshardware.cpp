@@ -153,27 +153,6 @@ JsSysTime jshGetSystemTime() {
 
 // ----------------------------------------------------------------------------
 
-Pin jshGetPinFromString(const char *s) {
-  if (!strcmp(s,"LED1")) return LED1_PININDEX; //
-  if (!strcmp(s,"LED2")) return LED2_PININDEX; //
-  if (!strcmp(s,"LED3")) return LED3_PININDEX; //
-  if (!strcmp(s,"LED4")) return LED4_PININDEX; //
-  if (!strcmp(s,"BTN")) return (Pin)5; //
-  return -1;
-}
-
-/** Write the pin name to a string. String must have at least 8 characters (to be safe) */
-void jshGetPinString(char *result, Pin pin) {
-  result[0] = 0; // just in case
-  switch (pin) {
-  case 1: strncpy(result,"LED1",8); break;
-  case 2: strncpy(result,"LED2",8); break;
-  case 3: strncpy(result,"LED3",8); break;
-  case 4: strncpy(result,"LED4",8); break;
-  case 5: strncpy(result,"BTN",8); break;
-  }
-}
-
 bool jshPinInput(Pin pin) {
   if (jshIsPinValid(pin))
     return jshPinGetValue(pin);
@@ -256,9 +235,10 @@ bool jshFlashContainsCode() {
 
 }
 
-/// Enter simple sleep mode (can be woken up by interrupts)
-void jshSleep() {
+/// Enter simple sleep mode (can be woken up by interrupts). Returns true on success
+bool jshSleep(JsSysTime timeUntilWake) {
    __WFI(); // Wait for Interrupt
+   return true;
 }
 
 void jshBitBang(Pin pin, JsVarFloat t0h, JsVarFloat t0l, JsVarFloat t1h, JsVarFloat t1l, JsVar *str) {

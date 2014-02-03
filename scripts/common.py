@@ -58,7 +58,7 @@ if silent:
 #
 
 
-def get_jsondata(is_for_document):
+def get_jsondata(is_for_document, parseArgs = True):
         scriptdir = os.path.dirname	(os.path.realpath(__file__))
         print "Script location "+scriptdir
         os.chdir(scriptdir+"/..")
@@ -66,7 +66,7 @@ def get_jsondata(is_for_document):
         jswraps = []
         defines = []
 
-        if len(sys.argv)>1:
+        if parseArgs and len(sys.argv)>1:
           print "Using files from command line"
           for i in range(1,len(sys.argv)):
             arg = sys.argv[i]
@@ -101,14 +101,14 @@ def get_jsondata(is_for_document):
 
           for comment in re.findall(r"/\*JSON.*?\*/", code, re.VERBOSE | re.MULTILINE | re.DOTALL):
             jsonstring = comment[6:-2]
-            print "Parsing "+jsonstring
+#            print "Parsing "+jsonstring
             try:
               jsondata = json.loads(jsonstring)
               jsondata["filename"] = jswrap
               jsondata["include"] = jswrap[:-2]+".h"
               if ("ifndef" in jsondata) and (jsondata["ifndef"] in defines):
                 print "Dropped because of #ifndef "+jsondata["ifndef"]
-              if ("ifdef" in jsondata) and not (jsondata["ifdef"] in defines):
+              elif ("ifdef" in jsondata) and not (jsondata["ifdef"] in defines):
                 print "Dropped because of #ifdef "+jsondata["ifdef"]
               else:
                 jsondatas.append(jsondata)
@@ -121,6 +121,103 @@ def get_jsondata(is_for_document):
         print "Scanning finished."
         return jsondatas
 
+# Takes the data from get_jsondata and restructures it in prepartion for output as JS
+# 
+# Results look like:, 
+#{
+#  "Pin": {
+#    "desc": [
+#      "This is the built-in class for Pins, such as D0,D1,LED1, or BTN", 
+#      "You can call the methods on Pin, or you can use Wiring-style functions such as digitalWrite"
+#    ], 
+#    "methods": {
+#      "read": {
+#        "desc": "Returns the input state of the pin as a boolean", 
+#        "params": [], 
+#        "return": [
+#          "bool", 
+#          "Whether pin is a logical 1 or 0"
+#        ]
+#      }, 
+#      "reset": {
+#        "desc": "Sets the output state of the pin to a 0", 
+#        "params": [], 
+#        "return": []
+#      }, 
+#      ...
+#    }, 
+#    "props": {}, 
+#    "staticmethods": {}, 
+#    "staticprops": {}
+#  },
+#  "print": {
+#    "desc": "Print the supplied string", 
+#    "return": []
+#  },
+#  ...
+#}
+#
+
+def get_struct_from_jsondata(jsondata):
+  context = {"modules": {}}
+
+  def checkClass(details):
+    cl = details["class"]
+    if not cl in context:
+      context[cl] = {"type": "class", "methods": {}, "props": {}, "staticmethods": {}, "staticprops": {}, "desc": details.get("description", "")}
+    return cl
+
+  def addConstructor(details):
+    cl = checkClass(details)
+    context[cl]["constructor"] = {"params": details.get("params", []), "return": details.get("return", []), "desc": details.get("description", "")}
+
+  def addMethod(details, type = ""):
+    cl = checkClass(details)
+    context[cl][type + "methods"][details["name"]] = {"params": details.get("params", []), "return": details.get("return", []), "desc": details.get("description", "")}
+
+  def addProp(details, type = ""):
+    cl = checkClass(details)
+    context[cl][type + "props"][details["name"]] = {"return": details.get("return", []), "desc": details.get("description", "")}
+
+  def addFunc(details):
+    context[details["name"]] = {"type": "function", "return": details.get("return", []), "desc": details.get("description", "")}
+
+  def addObj(details):
+    context[details["name"]] = {"type": "object", "instanceof": details.get("instanceof", ""), "desc": details.get("description", "")}
+
+  def addLib(details):
+    context["modules"][details["class"]] = {"desc": details.get("description", "")}
+
+  def addVar(details):
+    return
+
+  for data in jsondata:
+    type = data["type"]
+    if type=="class":
+      checkClass(data)
+    elif type=="constructor":
+      addConstructor(data)
+    elif type=="method":
+      addMethod(data)
+    elif type=="property":
+      addProp(data)
+    elif type=="staticmethod":
+      addMethod(data, "static")
+    elif type=="staticproperty":
+      addProp(data, "static")
+    elif type=="function":
+      addFunc(data)
+    elif type=="object":
+      addObj(data)
+    elif type=="library":
+      addLib(data)
+    elif type=="variable":
+      addVar(data)
+    else:
+      print(json.dumps(data, sort_keys=True, indent=2))
+
+  return context
+
 def get_includes_from_jsondata(jsondatas):
         includes = []
         for jsondata in jsondatas:
@@ -132,8 +229,10 @@ def get_includes_from_jsondata(jsondatas):
 def is_property(jsondata):
   return jsondata["type"]=="property" or jsondata["type"]=="staticproperty"
 
+def get_script_dir():
+        return os.path.dirname(os.path.realpath(__file__))
 def get_version():
-        scriptdir = os.path.dirname	(os.path.realpath(__file__))
+        scriptdir = get_script_dir()
         jsutils = scriptdir+"/../src/jsutils.h"
         return subprocess.check_output(["sed", "-ne", "s/^.*JS_VERSION.*\"\(.*\)\"/\\1/p", jsutils]).strip()
 
@@ -143,3 +242,6 @@ def get_name_or_space(jsondata):
 
 def get_bootloader_size():
         return 10*1024;
+
+def get_board_binary_name(board):
+        return board.info["binary_name"].replace("%v", get_version());

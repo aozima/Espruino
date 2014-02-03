@@ -19,7 +19,6 @@ import json;
 import sys;
 import os;
 
-MAX_ALLOWED_FUNCTIONS = 6
 ALLOWED_PORTS = "ABCDEFGH";
 ALLOWED_FUNCTIONS = {}
 CLASSES = {}
@@ -172,7 +171,14 @@ def scan_pin_file(pins, filename, nameoffset, functionoffset, altfunctionoffset)
       for fn in pindata[altfunctionoffset].strip().split("/"): 
         fname = fn.strip()
         pin["functions"][fname] = 1
-    print pin["name"]+" : "+', '.join(pin["functions"])
+#    print pin["name"]+" : "+', '.join(pin["functions"])
+  return pins
+
+# Create a simple list of pins
+def generate_pins(min_pin, max_pin):
+  pins = []
+  for n in range(min_pin, max_pin+1):
+    findpin(pins, "PD"+str(n), False)
   return pins
 
 # fill in gaps - eg. put A2 in A0,A1,A3,A4
@@ -202,7 +208,7 @@ def fill_gaps_in_pin_list(pins):
 def only_from_package(pins, package):
   newpins = []
   for pin in pins:
-    print json.dumps(pin)
+#    print json.dumps(pin)
     pinnumber =  pin["csv"][package]
     if pinnumber!="" and pinnumber!="0":
       newpins.append(pin)

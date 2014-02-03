@@ -8,8 +8,11 @@ CMSDIR=$DIR/../espruinowebsite/cms
 REFERENCEDIR=$DIR/../espruinowebsite/reference
 BOARDIMGDIR=$WEBSITEDIR/www/img
 JSONDIR=$WEBSITEDIR/www/json
+BINARYDIR=$WEBSITEDIR/www/binaries
+BOARDJSON=$WEBSITEDIR/www/json/boards.json
 
 function create_info() {
+  BOARDNAME=$1
   NICENAME=`python scripts/get_board_name.py $BOARDNAME`
   echo $BOARDNAME = $NICENAME 
   # the board's image
@@ -20,10 +23,32 @@ function create_info() {
   # the board JSON
   python scripts/build_board_json.py ${BOARDNAME}  || { echo 'Build failed' ; exit 1; }
   cp boards/${BOARDNAME}.json ${JSONDIR}
+  # add link to the boards list
+  echo "  \"${BOARDNAME}\" : {" >> $BOARDJSON
+  echo "    \"json\" : \"${BOARDNAME}.json\"," >> $BOARDJSON
+  echo "    \"thumb\" : \"http://www.espruino.com/img/${BOARDNAME}_thumb.jpg\"," >> $BOARDJSON
+  echo "    \"image\" : \"http://www.espruino.com/img/${BOARDNAME}.jpg\"" >> $BOARDJSON
+  echo "  }," >> $BOARDJSON
+  # copy in binary
+  BINARY_NAME=`python scripts/get_binary_name.py $BOARDNAME`
+  echo "Binary $BINARY_NAME"
+  unzip -p $DIR/archives/$CURRENTZIP $BINARY_NAME > $BINARYDIR/$BINARY_NAME
+  echo "UNZIP DONE"
 }
+
+cd $DIR/archives
+CURRENTZIP=`ls espruino_1v*.zip | sort | tail -1`
+echo Current zip = $CURRENTZIP
+cp -v $CURRENTZIP $WEBSITEDIR/www/files
+
+CURRENTVERSION=`echo $CURRENTZIP | sed -ne "s/.*\(1v[0-9][0-9]\).*/\1/p"`
+echo Current version = $CURRENTVERSION
+
+cd $DIR
 
 mkdir $BOARDIMGDIR
 mkdir $JSONDIR
+echo "{" > $BOARDJSON
 
 # -------------------------------------------- Create the text up the top of the reference
 echo Updating Board Docs
@@ -36,6 +61,10 @@ echo "<h2>Espruino Board - Supported</h2>" >> NewReference.html
  echo -e "<center><span style=\"text-align:center;margin:10px;width:200px;\"><a href=\"Reference${BOARDNAME}\"><img src=\"img/${BOARDNAME}_thumb.jpg\" alt=\"${NICENAME}\"><br/>${NICENAME}</a></span></center>" >> NewReference.html
 echo "<h2>Other Boards - Unsupported</h2>" >> NewReference.html
 echo "<div id=\"boards\" style=\"display:inline-block;\">" >> NewReference.html
+# TEMPORARY for old board support
+create_info ESPRUINOBOARD_R1_0
+create_info ESPRUINOBOARD_R1_1
+# ------------------
 
 for BOARDNAME in STM32VLDISCOVERY STM32F3DISCOVERY STM32F4DISCOVERY OLIMEXINO_STM32 HYSTM32_24 HYSTM32_28 HYSTM32_32
 do
@@ -45,6 +74,11 @@ do
 done
 echo "</div>"
 echo "<p>&nbsp;</p>"
+
+# remove last line of $BOARDJSON, which is ' },'
+sed -i '$ d' $BOARDJSON
+echo "  }" >> $BOARDJSON
+echo "}" >> $BOARDJSON
 
 echo Updating Reference.html
 python scripts/build_docs.py
@@ -58,13 +92,6 @@ bash $DIR/scripts/extract_changelog.sh | sed "s/</\&lt;/g" >> tmp.html
 sed -n "/CHANGELOGEND/,/./p" ${CMSDIR}/ChangeLog.html >> tmp.html
 mv tmp.html  ${CMSDIR}/ChangeLog.html
 
-cd $DIR/archives
-CURRENTZIP=`ls espruino_1v*.zip | sort | tail -1`
-echo Current zip = $CURRENTZIP
-cp -v $CURRENTZIP $WEBSITEDIR/www/files
-
-CURRENTVERSION=`echo $CURRENTZIP | sed -ne "s/.*\(1v[0-9][0-9]\).*/\1/p"`
-echo Current version = $CURRENTVERSION
 sed -i "s/1v[0-9][0-9]/$CURRENTVERSION/g" $CMSDIR/Download.html
 
 cd $ESPRUINODOCS

@@ -1,3 +1,68 @@
+     1v49 : Change compiler flags to allow link-time optimisation
+            Increase buffer sizes on Linux
+            Increase buffer sizes on boards with >= 20kB RAM
+            Made Startup banner smaller
+            Less printing when loading from flash
+            Don't display startup banner if loading from flash (an easy way to fix #213)
+            Fix HTTP response code of 0 (fix #212)
+
+     1v48 : Fix issue where the size of command history is being reported wrong and so process.memory().free is reported wrong too
+            We now loop without a seek to position inside the string (much faster if loop is not near the start of a fn) (fix #53)
+            Faster string iteration which doesn't involve incrementing it->index
+            Swapped to jumptable to lexer (should be a bit faster)
+            Added the 'E' class, with getAnalogVRef and getTemperature (fix #60)
+            Deprecated Math.clip (not in spec) and introduced E.clip 
+            Fixed bug in common.py that meant that ifndefs in JSON were sometimes not obeyed (better mem usage on small chips)
+            Fix deep sleep breaking ADCs
+
+     1v47 : Fix issue with dump() and input_pullup not being quoted
+            Fix regression that broke OneWire in Espruino Board (#197)
+            Fix clock speed issue on SPI1 (https://github.com/espruino/EspruinoDocs/issues/18)
+            Don't interrupt on USB ESOF or ERR  - allows 'normal' sleep without interrupting every 1ms (fix #195)
+            Remove pointless KickStarter line printed on startup
+            Added bootloader hack to Python bootloader
+
+     1v46 : Fix parseFloat("") not returning NaN, and parseFloat(" \t 5 £$%^&(*$") returning NaN
+            Added isNaN() function (fix #184)
+            Fix parse order for 'typeof' (fix #172)
+            Added Number object (fix #165)
+            Bounded ftoa (stops crash when printing Number.MAX_VALUE) - helps with #185
+            Added Array.isArray() (fix #160)
+            Add do...while (fix #151)
+            Stop Espruino board from crashing if you try to create a web server without a connected CC3k (fix #182)
+            Remove Array.contains as it's not in the spec (use indexOf instead if you need it) (fix #161)
+            Fix nasty bug where adding/removing intervals/timeouts while in one could cause issues
+            Fix bug when printing 1.999999999 and similar (fix #190)
+            Remove need for pow for exponentiation. Not great but it fixes some tests that failed on FP inaccuracies
+            Change polarity of setSleepIndicator (fix #194)
+            Allow array.push with multiple arguments (fix #189)
+            Speed up array access by searching from the end backwards if we think the number is in the last half (fix #46)
+
+     1v45 : Fix parseFloat("foo") not returning NaN (and assert) - fix #149
+            Remove Integer.parseInt
+            Fix parseInt("bar") - fix #150
+            Ensure that maths ops with null do treat it as 0 rather than a string - fix #156
+            Fix digitalPulse length (properly!) - fix #154
+            Making sure that undefined gets cast to NaN
+            Fix Array.indexOf() returns undefined instead of -1 - fix #155
+            Moved memory() to process.memory() - added more info too    
+            Try and improve handling of PWM timer speeds
+            Fixed varying SPI baud rates depending on device
+            Makefile changes for OSX compile        
+
+     1v44 : Modified build system to store binary names in the python definition
+            Fix nasty regression involving losing code at the end of Strings
+            Fix segfault when pinMode is called on an invalid pin
+            Now disable interrupts during 4 bit SPI send - it's just too much otherwise
+            Detect unfinished block comments in console (fix #138)
+            Fix flash write on most 10XxB boards
+            Fix PWM output on all STM32 boards
+            General hardware tidy in prep for more intelligent device management
+            Run initialisation code before setWatch, to make sure pullup/down is set beforehand
+            Change 'Pin' datatype to be an unsigned char - makes tests easier
+            Now use the hardware RTC for keeping system time. Allows proper deep sleep on Espruino board
+            FINALLY - fix the USB VCP lost characters issue (#94)
+
      1v43 : Added 'Modules' object with support for adding/removing cached modules
             Allow product ID to be changed via Makefile
             Fix documentation (and old-fashined Parsing style) for JSON
@@ -22,6 +87,15 @@
             Remove JSV_PARENTINFO, as it turns out JS doesn't keep track of function scopes anyway (fix #109)
             Make 'this' a keyword (now faster, more memory efficient)
             Make 'Hardware' (root) the default value of 'this'
+            Add jsvArrayPushAndUnLock and modified code to use it (fix #135)
+            Now remember I2C state (partial fix for #13)
+            Replace 'pow' function with a smaller version - save ~2kb
+            Shaved another 1200 bytes off jslTokenAsString
+            Now store Pin state (fix for #13 on F1 parts, F4 still looks broken)
+            Added Graphics.stringWidth
+            Added internal Printf function
+	           Misc speed and code size improvements
+            This version has gone to Seeed for use on the KickStarter boards
 
      1v42 : [ebirger] allowing 'new' with no brackets
             Allow built-in functions with variable numbers of arguments (fix #83)  
@@ -37,7 +111,7 @@
             Stop 'new undefined()' crashing Espruino - fix #120
             Get A13/A14 working on Espruino board (these were JTAG)
             Get bootloader size direct from Python (remove hard-coding)
-	    Fix '~' operator when acting on variables
+	           Fix '~' operator when acting on variables
             Made bootloader a bit more error tolerate (CRC on write)
             Added %=, /=, and *= operators (fix #121)
             Allowed Object.toString() to take a radix argument for integers (fix #125)
@@ -99,10 +173,10 @@
             Special-case jsvArrayBufferIteratorSetIntegerValue
             Make SPI output an ArrayBuffer
             Use best out of 3 for DelayMicroseconds calibration - something seems flaky right after bootup
-	    Lines now drawn from p1 to p2 inclusive
-	    Events now use jshPushIOWatchEvent (should cut down on code) also fixed bug with watching pin #11
-	    Now remember if pinMode was set or not
-	    Transform ```code``` in JSON into a code tag in the documentation
+	           Lines now drawn from p1 to p2 inclusive
+	           Events now use jshPushIOWatchEvent (should cut down on code) also fixed bug with watching pin #11
+	           Now remember if pinMode was set or not
+       	    Transform ```code``` in JSON into a code tag in the documentation
             Graphics now supports FSMC for HY boards again
             Drawing vector fonts is now roughly the right size and position (still not 100%)
             Remove registration code

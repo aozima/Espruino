@@ -17,6 +17,8 @@ import pinutils;
 info = {
  'name' : "STM32 2.4 inch LCD Board (VET6)",
  'variables' : 2800,
+ 'serial_bootloader' : True,
+ 'binary_name' : 'espruino_%v_hystm32_24_ve.bin',
 };
 chip = {
   'part' : "STM32F103VE", #T6
@@ -58,7 +60,7 @@ devices = {
   'POT2' : { 'pin' : 'C1' },
   'USB' : { 'pin_disc' :  'B7',
             'pin_dm' : 'A11',
-            'pin_bp' : 'A12' },
+            'pin_dp' : 'A12' },
   'SD' :  { 'pin_cmd' :  'D2',
             'pin_d0' :  'C8',
             'pin_d1' :  'C9',

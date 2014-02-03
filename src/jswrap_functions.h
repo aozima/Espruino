@@ -15,5 +15,6 @@
 
 JsVar *jswrap_arguments();
 JsVar *jswrap_eval(JsVar *v);
-JsVarInt jswrap_parseInt(JsVar *v, JsVarInt radix);
+JsVar *jswrap_parseInt(JsVar *v, JsVar *radixVar);
 JsVarFloat jswrap_parseFloat(JsVar *v);
+bool jswrap_isNaN(JsVar *v);

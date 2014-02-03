@@ -252,6 +252,18 @@ void EXTI15_10_IRQHandler(void) {
     }
 }
 
+void RTC_IRQHandler(void) {
+#ifdef STM32F1
+  RTC_ClearITPendingBit(RTC_IT_ALR);
+#else
+  RTC_ClearITPendingBit(RTC_IT_ALRA);
+#endif
+}
+
+void RTCAlarm_IRQHandler(void) {
+  EXTI_ClearITPendingBit(EXTI_Line17);
+}
+
 static inline void USART_IRQHandler(USART_TypeDef *USART, IOEventFlags device) {
   if(USART_GetITStatus(USART, USART_IT_RXNE) != RESET) {
      /* Clear the USART Receive interrupt */
@@ -357,6 +369,11 @@ void SPI3_IRQHandler(void) {
 void USB_LP_CAN1_RX0_IRQHandler(void)
 {
   USB_Istr();
+}
+
+void USBWakeUp_IRQHandler(void)
+{
+  EXTI_ClearITPendingBit(EXTI_Line18);
 }
 #endif // STM32F1
 

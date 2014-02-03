@@ -14,8 +14,9 @@
 # ESPRUINO_1V0=1          # Espruino board rev 1.0
 # ESPRUINO_1V1=1          # Espruino board rev 1.1 and 1.2
 # ESPRUINO_1V3=1          # Espruino board rev 1.3
-# OLIMEX=1                # Olimexino STM32
-# OLIMEX_BOOTLOADER=1     # Olimexino STM32 with bootloader
+# OLIMEXINO_STM32=1                # Olimexino STM32
+# OLIMEXINO_STM32_BOOTLOADER=1     # Olimexino STM32 with bootloader
+# EMBEDDED_PI=1           # COOCOX STM32 Embedded Pi boards
 # HYSTM32_24=1            # HY STM32 2.4 Ebay boards
 # HYSTM32_28=1            # HY STM32 2.8 Ebay boards
 # HYSTM32_32=1            # HY STM32 3.2 VCT6 Ebay boards
@@ -35,6 +36,7 @@
 # RELEASE=1               # Force release-style compile (no asserts, etc)
 # SINGLETHREAD=1          # Compile single-threaded to make compilation errors easier to find
 # BOOTLOADER=1            # make the bootloader (not Espruino)
+# PROFILE=1               # Compile with gprof profiling info
 
 ifndef SINGLETHREAD
 MAKEFLAGS=-j5 # multicore
@@ -54,6 +56,9 @@ ifeq ($(shell uname -m),armv6l)
 RASPBERRYPI=1 # just a guess
 endif
 
+ifeq ($(shell uname),Darwin)
+MACOSX=1
+endif
 
 # Gordon's car ECU (extremely beta!)
 ifdef ECU
@@ -77,9 +82,6 @@ BASEADDRESS=0x08000000
 ###################################################
 # When adding stuff here, also remember build_pininfo, platform_config.h, jshardware.c
 ifdef ESPRUINO_1V0
-PROJ_NAME=espruino_espruino_1v0
-USE_BOOTLOADER=1
-BOOTLOADER_PROJ_NAME=bootloader_espruino_1v0
 USB=1
 #USE_NET=1
 #USE_CC3000=1
@@ -93,7 +95,6 @@ STLIB=STM32F10X_XL
 PRECOMPILED_OBJS+=$(ROOT)/targetlibs/stm32f1/lib/startup_stm32f10x_hd.o
 OPTIMIZEFLAGS+=-O3
 else ifdef ESPRUINO_1V1
-PROJ_NAME=espruino_espruino_1v1
 DEFINES+=-DESPRUINO_1V1
 USE_BOOTLOADER=1
 BOOTLOADER_PROJ_NAME=bootloader_espruino_1v1
@@ -108,9 +109,8 @@ BOARD=ESPRUINOBOARD_R1_1
 DEFINES+=-DESPRUINOBOARD
 STLIB=STM32F10X_XL
 PRECOMPILED_OBJS+=$(ROOT)/targetlibs/stm32f1/lib/startup_stm32f10x_hd.o
-OPTIMIZEFLAGS+=-O3
+OPTIMIZEFLAGS+=-Os # not that short on memory, but Travis compiler is old and uses more
 else ifdef ESPRUINO_1V3
-PROJ_NAME=espruino_espruino_1v3
 DEFINES+=-DESPRUINO_1V3
 USE_BOOTLOADER=1
 BOOTLOADER_PROJ_NAME=bootloader_espruino_1v3
@@ -125,8 +125,7 @@ BOARD=ESPRUINOBOARD
 STLIB=STM32F10X_XL
 PRECOMPILED_OBJS+=$(ROOT)/targetlibs/stm32f1/lib/startup_stm32f10x_hd.o
 OPTIMIZEFLAGS+=-O3
-else ifdef OLIMEX
-PROJ_NAME=espruino_olimexino_stm32
+else ifdef OLIMEXINO_STM32
 USB=1
 USE_FILESYSTEM=1
 FAMILY=STM32F1
@@ -135,8 +134,7 @@ BOARD=OLIMEXINO_STM32
 STLIB=STM32F10X_MD
 PRECOMPILED_OBJS+=$(ROOT)/targetlibs/stm32f1/lib/startup_stm32f10x_md.o
 OPTIMIZEFLAGS+=-Os # short on program memory
-else ifdef OLIMEX_BOOTLOADER
-PROJ_NAME=espruino_olimexino_bootloader_stm32
+else ifdef OLIMEXINO_STM32_BOOTLOADER
 USB=1
 USE_FILESYSTEM=1
 FAMILY=STM32F1
@@ -147,8 +145,16 @@ BOARD=OLIMEXINO_STM32_BOOTLOADER
 STLIB=STM32F10X_MD
 PRECOMPILED_OBJS+=$(ROOT)/targetlibs/stm32f1/lib/startup_stm32f10x_md.o
 OPTIMIZEFLAGS+=-Os # short on program memory
+else ifdef EMBEDDED_PI
+USB=1
+# USE_FILESYSTEM=1 # no SD-CARD READER
+FAMILY=STM32F1
+CHIP=STM32F103RB
+BOARD=EMBEDDED_PI
+STLIB=STM32F10X_MD
+PRECOMPILED_OBJS+=$(ROOT)/targetlibs/stm32f1/lib/startup_stm32f10x_md.o
+OPTIMIZEFLAGS+=-Os # short on program memory
 else ifdef HYSTM32_24
-PROJ_NAME=espruino_hystm32_24_ve
 USB=1
 USE_GRAPHICS=1
 USE_LCD_FSMC=1
@@ -161,7 +167,6 @@ STLIB=STM32F10X_HD
 PRECOMPILED_OBJS+=$(ROOT)/targetlibs/stm32f1/lib/startup_stm32f10x_hd.o
 OPTIMIZEFLAGS+=-O3
 else ifdef HYSTM32_28
-PROJ_NAME=espruino_hystm32_28_rb
 USB=1
 USE_GRAPHICS=1
 USE_LCD_FSMC=1
@@ -175,7 +180,6 @@ STLIB=STM32F10X_MD
 PRECOMPILED_OBJS+=$(ROOT)/targetlibs/stm32f1/lib/startup_stm32f10x_md.o
 OPTIMIZEFLAGS+=-Os
 else ifdef HYSTM32_32
-PROJ_NAME=espruino_hystm32_32_vc
 USB=1
 USE_GRAPHICS=1
 USE_LCD_FSMC=1
@@ -188,7 +192,6 @@ STLIB=STM32F10X_HD
 PRECOMPILED_OBJS+=$(ROOT)/targetlibs/stm32f1/lib/startup_stm32f10x_hd.o
 OPTIMIZEFLAGS+=-O3
 else ifdef STM32F4DISCOVERY
-PROJ_NAME=espruino_stm32f4discovery
 USB=1
 USE_NET=1
 USE_CC3000=1
@@ -201,7 +204,6 @@ STLIB=STM32F4XX
 PRECOMPILED_OBJS+=$(ROOT)/targetlibs/stm32f4/lib/startup_stm32f4xx.o
 OPTIMIZEFLAGS+=-O3
 else ifdef STM32F429IDISCOVERY
-PROJ_NAME=espruino_stm32f429idiscovery
 USB=1
 USE_GRAPHICS=1
 #USE_LCD_FSMC=1
@@ -213,7 +215,6 @@ STLIB=STM32F4XX
 PRECOMPILED_OBJS+=$(ROOT)/targetlibs/stm32f4/lib/startup_stm32f4xx.o
 OPTIMIZEFLAGS+=-O3
 else ifdef SMARTWATCH
-PROJ_NAME=espruino_smartwatch
 DEFINES+=-DHSE_VALUE=26000000UL
 USB=1
 FAMILY=STM32F2
@@ -223,7 +224,6 @@ STLIB=STM32F2XX
 PRECOMPILED_OBJS+=$(ROOT)/targetlibs/stm32f2/lib/startup_stm32f2xx.o
 OPTIMIZEFLAGS+=-O3
 else ifdef STM32F3DISCOVERY
-PROJ_NAME=espruino_stm32f3discovery
 #USE_BOOTLOADER=1
 #BOOTLOADER_PROJ_NAME=bootloader_espruino_stm32f3discovery
 USB=1
@@ -234,7 +234,6 @@ STLIB=STM32F3XX
 PRECOMPILED_OBJS+=$(ROOT)/targetlibs/stm32f3/lib/startup_stm32f30x.o
 OPTIMIZEFLAGS+=-O3
 else ifdef STM32VLDISCOVERY
-PROJ_NAME=espruino_stm32vldiscovery
 FAMILY=STM32F1
 CHIP=STM32F100RB
 BOARD=STM32VLDISCOVERY
@@ -242,7 +241,6 @@ STLIB=STM32F10X_MD_VL
 PRECOMPILED_OBJS+=$(ROOT)/targetlibs/stm32f1/lib/startup_stm32f10x_md_vl.o
 OPTIMIZEFLAGS+=-Os # short on program memory
 else ifdef TINYCHIP
-PROJ_NAME=espruino_stm32f103tbu
 FAMILY=STM32F1
 CHIP=STM32F103TB
 BOARD=TINYCHIP
@@ -250,7 +248,6 @@ STLIB=STM32F10X_MD
 PRECOMPILED_OBJS+=$(ROOT)/targetlibs/stm32f1/lib/startup_stm32f10x_md.o
 OPTIMIZEFLAGS+=-Os # short on program memory
 else ifdef LPC1768
-PROJ_NAME=espruino_LPC1768
 MBED=1
 FAMILY=LPC1768
 CHIP=LPC1768
@@ -260,17 +257,16 @@ PRECOMPILED_OBJS+=$(MBED_GCC_CS_DIR)/sys.o $(MBED_GCC_CS_DIR)/cmsis_nvic.o $(MBE
 LIBS+=-L$(MBED_GCC_CS_DIR)  -lmbed 
 OPTIMIZEFLAGS+=-O3
 else ifdef CARAMBOLA
-PROJ_NAME=espruino_carambola
-DEFINES += -DCARAMBOLA
+BOARD=CARAMBOLA
+DEFINES += -DCARAMBOLA -DSYSFS_GPIO_DIR="\"/sys/class/gpio\""
 LINUX=1
 USE_FILESYSTEM=1
 USB=1
 USE_GRAPHICS=1
 USE_NET=1
 else ifdef RASPBERRYPI
-PROJ_NAME=espruino
-BOARD=LINUX
-DEFINES += -DRASPBERRYPI
+BOARD=RASPBERRYPI
+DEFINES += -DRASPBERRYPI -DSYSFS_GPIO_DIR="\"/sys/class/gpio\""
 LINUX=1
 USE_FILESYSTEM=1
 USB=1
@@ -278,7 +274,6 @@ USE_GRAPHICS=1
 #USE_LCD_SDL=1
 USE_NET=1
 else ifdef LCTECH_STM32F103RBT6
-PROJ_NAME=espruino_lctechstm32f103rbt6
 USB=1
 SAVE_ON_FLASH=1
 FAMILY=STM32F1
@@ -288,24 +283,41 @@ STLIB=STM32F10X_MD
 PRECOMPILED_OBJS+=$(ROOT)/targetlibs/stm32f1/lib/startup_stm32f10x_md.o
 OPTIMIZEFLAGS+=-Os
 else
-PROJ_NAME=espruino
 BOARD=LINUX
 LINUX=1
 USE_FILESYSTEM=1
 USB=1
 USE_GRAPHICS=1
-USE_LCD_SDL=1
+#USE_LCD_SDL=1
+ifndef MACOSX
+# http libs need some tweaks before net can compile
 USE_NET=1
 endif
+endif
+
+PROJ_NAME=$(shell python scripts/get_binary_name.py $(BOARD)  | sed -e "s/.bin$$//")
+ifeq ($(PROJ_NAME),)
+$(error Unable to work out binary name (PROJ_NAME)) 
+endif
+ifeq ($(BOARD),LINUX)
+PROJ_NAME=espruino
+endif
+
+
 
 ifdef DEBUG
 #OPTIMIZEFLAGS=-Os -g
 OPTIMIZEFLAGS=-g
 endif
 
+ifdef PROFILE
+OPTIMIZEFLAGS+=-pg
+endif
+
 WRAPPERFILE=gen/jswrapper.c
 WRAPPERSOURCES = \
 src/jswrap_pin.c \
+src/jswrap_espruino.c \
 src/jswrap_functions.c \
 src/jswrap_modules.c \
 src/jswrap_process.c \
@@ -313,6 +325,7 @@ src/jswrap_interactive.c \
 src/jswrap_json.c \
 src/jswrap_object.c \
 src/jswrap_string.c \
+src/jswrap_number.c \
 src/jswrap_array.c \
 src/jswrap_arraybuffer.c \
 src/jswrap_serial.c \
@@ -327,6 +340,7 @@ src/jslex.c \
 src/jsvar.c \
 src/jsutils.c \
 src/jsparse.c \
+src/jspin.c \
 src/jsinteractive.c \
 src/jsdevices.c \
 $(WRAPPERFILE)
@@ -345,10 +359,11 @@ targets/stm32_boot/utils.c
  ifndef DEBUG
   OPTIMIZEFLAGS=-Os
  endif
-else # !BOOTLOADER
+else # !BOOTLOADER but using a bootloader
  ifdef USE_BOOTLOADER
   BUILD_LINKER_FLAGS+=--using_bootloader
-  STM32LOADER_FLAGS+=-p /dev/ttyACM0
+  # -k applies bootloader hack for Espruino 1v3 boards
+  STM32LOADER_FLAGS+=-k -p /dev/ttyACM0
   BASEADDRESS=$(shell python -c "import sys;sys.path.append('scripts');import common;print hex(0x08000000+common.get_bootloader_size())")
  endif
 endif
@@ -461,6 +476,7 @@ DEFINES += -DUSE_NET
 WRAPPERSOURCES += libs/network/http/jswrap_http.c
 INCLUDE += -I$(ROOT)/libs/network/http
 SOURCES += \
+libs/network/network.c \
 libs/network/http/httpserver.c 
 ifdef LINUX
 #LIBS += -l... 
@@ -737,15 +753,11 @@ endif
 
 ifdef ARM
 LINKER_FILE = gen/linker.ld
-PININFOFILE=$(ROOT)/gen/jshardware_pininfo.c
 DEFINES += -DARM 
 INCLUDE += -I$(ROOT)/targetlibs/arm
-OPTIMIZEFLAGS += -fno-common -fno-exceptions -fdata-sections -ffunction-sections
-# -flto -fuse-linker-plugin
-# -flto  - link time optimisation - could be good for ST's libs
-#          GCC suggests use of -fuse-linker-plugin with flto
-#          Does not work - get errors like : `sqrt' referenced in section `.text.asin' of /tmp/ccJheOub.ltrans9.ltrans.o: defined in discarded section `.text' of libs/math/sqrt.o (symbol from plugin)
-
+OPTIMIZEFLAGS += -fno-common -fno-exceptions -fdata-sections -ffunction-sections 
+# Enable link-time optimisations (inlining across files)
+OPTIMIZEFLAGS += -flto -fno-fat-lto-objects -Wl,--allow-multiple-definition
 
 # 4.6
 #export CCPREFIX=arm-linux-gnueabi-
@@ -755,8 +767,9 @@ OPTIMIZEFLAGS += -fno-common -fno-exceptions -fdata-sections -ffunction-sections
 export CCPREFIX=arm-none-eabi-
 endif # ARM
 
+PININFOFILE=$(ROOT)/gen/jspininfo
 ifdef PININFOFILE
-SOURCES += $(PININFOFILE) 
+SOURCES += $(PININFOFILE).c
 endif
 
 ifdef CARAMBOLA
@@ -769,7 +782,9 @@ ifdef RASPBERRYPI
   ifneq ($(shell uname -m),armv6l)
     # eep. let's cross compile
     export CCPREFIX=targetlibs/raspberrypi/tools/arm-bcm2708/gcc-linaro-arm-linux-gnueabihf-raspbian/bin/arm-linux-gnueabihf-
-    PROJ_NAME=espruino_raspberrypi
+  else
+    # compiling in-place, so give it a normal name
+    PROJ_NAME=espruino
   endif
 endif
 
@@ -809,7 +824,10 @@ CFLAGS += $(OPTIMIZEFLAGS) -c $(ARCHFLAGS) $(DEFINES) $(INCLUDE)
 
 # -Wl,--gc-sections helps remove unused code
 # -Wl,--whole-archive checks for duplicates
-LDFLAGS += $(OPTIMIZEFLAGS) $(ARCHFLAGS) -Wl,--gc-sections
+LDFLAGS += $(OPTIMIZEFLAGS) $(ARCHFLAGS)
+ifndef MACOSX
+LDFLAGS += -Wl,--gc-sections
+endif
 
 ifdef LINKER_FILE 
 LDFLAGS += -T$(LINKER_FILE)
@@ -845,9 +863,9 @@ $(WRAPPERFILE): scripts/build_jswrapper.py $(WRAPPERSOURCES)
 	$(Q)python scripts/build_jswrapper.py $(WRAPPERSOURCES) $(DEFINES)
 
 ifdef PININFOFILE
-$(PININFOFILE): scripts/build_pininfo.py 
+$(PININFOFILE).c $(PININFOFILE).h: scripts/build_pininfo.py 
 	@echo Generating pin info
-	$(Q)python scripts/build_pininfo.py $(BOARD) $(PININFOFILE)
+	$(Q)python scripts/build_pininfo.py $(BOARD) $(PININFOFILE).c $(PININFOFILE).h
 endif
 
 $(LINKER_FILE): scripts/build_linker.py 
@@ -868,11 +886,11 @@ quiet_link= LD $@
 quiet_obj_dump= GEN $(PROJ_NAME).lst
 quiet_obj_to_bin= GEN $(PROJ_NAME).$2
 
-%.o: %.c $(PLATFORM_CONFIG_FILE)
+%.o: %.c $(PLATFORM_CONFIG_FILE) $(PININFOFILE).h
 	@echo $($(quiet_)compile)
 	@$(call compile)
 
-.cpp.o: $(PLATFORM_CONFIG_FILE)
+.cpp.o: $(PLATFORM_CONFIG_FILE) $(PININFOFILE).h
 	@echo $($(quiet_)compile)
 	@$(call compile)
 
@@ -908,11 +926,13 @@ $(PROJ_NAME).srec : $(PROJ_NAME).elf
 $(PROJ_NAME).bin : $(PROJ_NAME).elf
 	@echo $(call $(quiet_)obj_to_bin,binary,bin)
 	@$(call obj_to_bin,binary,bin)
+	bash scripts/check_size.sh $(PROJ_NAME).bin
 
-proj: $(PROJ_NAME).lst $(PROJ_NAME).hex $(PROJ_NAME).srec $(PROJ_NAME).bin
+proj: $(PROJ_NAME).lst $(PROJ_NAME).bin
+#proj: $(PROJ_NAME).lst $(PROJ_NAME).hex $(PROJ_NAME).srec $(PROJ_NAME).bin
 
 flash: all
-ifdef OLIMEX_BOOTLOADER
+ifdef OLIMEXINO_STM32_BOOTLOADER
 	echo Olimexino Serial bootloader
 	dfu-util -a1 -d 0x1EAF:0x0003 -D $(PROJ_NAME).bin
 else

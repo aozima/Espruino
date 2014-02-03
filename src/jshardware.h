@@ -20,8 +20,9 @@
 #include "jsutils.h"
 #include "jsvar.h"
 #include "jsdevices.h"
+#include "jspin.h"
 #ifndef LINUX
-#include "jshardware_pininfo.h"
+#include "jspininfo.h"
 #else
 #include <inttypes.h>
 #endif
@@ -42,34 +43,12 @@ JsSysTime jshGetTimeFromMilliseconds(JsVarFloat ms);
 /// Convert ticks to a time in Milliseconds
 JsVarFloat jshGetMillisecondsFromTime(JsSysTime time);
 
-/// Given a string, convert it to a pin ID (or -1 if it doesn't exist)
-Pin jshGetPinFromString(const char *s);
-/** Write the pin name to a string. String must have at least 8 characters (to be safe) */
-void jshGetPinString(char *result, Pin pin);
-/// Given a var, convert it to a pin ID (or -1 if it doesn't exist). safe for undefined!
-static inline Pin jshGetPinFromVar(JsVar *pinv) {
-  Pin pin=-1;
-  if (jsvIsString(pinv) && pinv->varData.str[5]==0/*should never be more than 4 chars!*/) {
-    pin = jshGetPinFromString(&pinv->varData.str[0]);
-  } else if (jsvIsInt(pinv) /* This also tests for the Pin datatype */) {
-    pin = (Pin)jsvGetInteger(pinv);
-  }
-  return pin;
-}
-
-static inline Pin jshGetPinFromVarAndUnLock(JsVar *pinv) {
-  Pin pin = jshGetPinFromVar(pinv);
-  jsvUnLock(pinv);
-  return pin;
-}
-
 // software IO functions...
 void jshInterruptOff();
 void jshInterruptOn();
 void jshDelayMicroseconds(int microsec);
 void jshPinSetValue(Pin pin, bool value);
 bool jshPinGetValue(Pin pin);
-bool jshIsPinValid(Pin pin); // is the specific pin actually valid?
 // ------
 
 typedef enum {
@@ -85,7 +64,10 @@ typedef enum {
   JSHPINSTATE_USART_OUT,
   JSHPINSTATE_DAC_OUT,
   JSHPINSTATE_I2C,
-} JshPinState;
+  JSHPINSTATE_MASK = NEXT_POWER_2(JSHPINSTATE_I2C)-1,
+
+  JSHPINSTATE_PIN_IS_ON = JSHPINSTATE_MASK+1,
+} PACKED_FLAGS JshPinState;
 
 #define JSHPINSTATE_IS_OUTPUT(state) ( \
              state==JSHPINSTATE_GPIO_OUT ||               \
@@ -96,9 +78,15 @@ typedef enum {
              state==JSHPINSTATE_I2C                       \
 )
 
+/// Is the pin state manual (has the user asked us explicitly to change it?)
 bool jshGetPinStateIsManual(Pin pin);
+/// Is the pin state manual (has the user asked us explicitly to change it?)
 void jshSetPinStateIsManual(Pin pin, bool manual);
+/// Set the pin state
 void jshPinSetState(Pin pin, JshPinState state);
+/** Get the pin state (only accurate for simple IO - won't return JSHPINSTATE_USART_OUT for instance).
+ * Note that you should use JSHPINSTATE_MASK as other flags may have been added */
+JshPinState jshPinGetState(Pin pin);
 
 
 bool jshPinInput(Pin pin);
@@ -134,12 +122,12 @@ typedef struct {
   unsigned char bytesize;
   unsigned char parity;
   unsigned char stopbits;
-} JshUSARTInfo;
+} PACKED_FLAGS JshUSARTInfo;
 
 static inline void jshUSARTInitInfo(JshUSARTInfo *inf) {
   inf->baudRate = DEFAULT_BAUD_RATE;
-  inf->pinRX    = -1;
-  inf->pinTX    = -1;
+  inf->pinRX    = PIN_UNDEFINED;
+  inf->pinTX    = PIN_UNDEFINED;
   inf->bytesize = DEFAULT_BYTESIZE;
   inf->parity   = DEFAULT_PARITY; // PARITY_NONE = 0, PARITY_ODD = 1, PARITY_EVEN = 2 FIXME: enum?
   inf->stopbits = DEFAULT_STOPBITS;
@@ -162,7 +150,7 @@ typedef enum {
         3   1     1
     */
 
-} JshSPIFlags;
+} PACKED_FLAGS JshSPIFlags;
 
 typedef struct {
   int baudRate;
@@ -170,13 +158,12 @@ typedef struct {
   Pin pinMISO;
   Pin pinMOSI;
   unsigned char spiMode;
-
-} JshSPIInfo;
+} PACKED_FLAGS JshSPIInfo;
 static inline void jshSPIInitInfo(JshSPIInfo *inf) {
   inf->baudRate = 1000000;
-  inf->pinSCK = -1;
-  inf->pinMISO = -1;
-  inf->pinMOSI = -1;
+  inf->pinSCK = PIN_UNDEFINED;
+  inf->pinMISO = PIN_UNDEFINED;
+  inf->pinMOSI = PIN_UNDEFINED;
   inf->spiMode = SPIF_SPI_MODE_0;
 }
 
@@ -199,10 +186,10 @@ typedef struct {
   char slaveAddr; // or -1 if it is master!
   // speed? 100khz std
   // timeout?
-} JshI2CInfo;
+} PACKED_FLAGS JshI2CInfo;
 static inline void jshI2CInitInfo(JshI2CInfo *inf) {
-  inf->pinSCL = -1;
-  inf->pinSDA = -1;
+  inf->pinSCL = PIN_UNDEFINED;
+  inf->pinSDA = PIN_UNDEFINED;
   inf->slaveAddr = (char)-1; // master
 }
 /** Set up I2C, if pins are -1 they will be guessed */
@@ -219,8 +206,8 @@ void jshLoadFromFlash();
 /// Returns true if flash contains something useful
 bool jshFlashContainsCode();
 
-/// Enter simple sleep mode (can be woken up by interrupts)
-void jshSleep();
+/// Enter simple sleep mode (can be woken up by interrupts). Returns true on success
+bool jshSleep(JsSysTime timeUntilWake);
 
 // ---------------------------------------------- LOW LEVEL
 #ifdef ARM
@@ -234,5 +221,12 @@ void jshKickUSBWatchdog();
 #endif
 
 #endif // ARM
+
+#ifdef STM32F1
+// the temperature from the internal temperature sensor
+JsVarFloat jshReadTemperature();
+// The voltage that a reading of 1 from `analogRead` actually represents
+JsVarFloat jshReadVRef();
+#endif
 
 #endif /* JSHARDWARE_H_ */

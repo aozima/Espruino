@@ -19,6 +19,7 @@ info = {
  'name' : "STM32 F3 Discovery",
  'link' :  [ "http://www.st.com/web/catalog/tools/FM116/SC959/SS1532/PF254044" ],
  'variables' : 1720,
+ 'binary_name' : 'espruino_%v_stm32f3discovery.bin',
 };
 chip = {
   'part' : "STM32F303VCT6",
@@ -57,7 +58,7 @@ devices = {
 
   'USB' : { 'pin_otg_pwr' : 'C0',#
             'pin_dm' : 'A11',
-            'pin_bp' : 'A12',
+            'pin_dp' : 'A12',
             'pin_vbus' : 'A9',#
             'pin_id' : 'A10', },#
   'GYRO' : { 'device' : 'L3GD20',

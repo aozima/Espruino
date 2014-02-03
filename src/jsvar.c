@@ -70,7 +70,7 @@ void jsvSetMaxVarsUsed(unsigned int size) {
 void jsvSoftInit() {
   jsVarFirstEmpty = 0;
   JsVar *lastEmpty = 0;
-  JsVarRef i;  
+  JsVarRef i;
   for (i=1;i<=jsVarsSize;i++) {
     if ((jsvGetAddressOf(i)->flags&JSV_VARTYPEMASK) == JSV_UNUSED) {
       jsvGetAddressOf(i)->nextSibling = 0;
@@ -173,11 +173,7 @@ void jsvSetMemoryTotal(unsigned int jsNewVarCount) {
    * is 0 (because jsiFreeMoreMemory returned 0) so we can just assign it.  */
   assert(!jsVarFirstEmpty);
   jsVarFirstEmpty = jsvInitJsVars(oldSize+1, jsVarsSize-oldSize);
-  /*jsiConsolePrint("Resized memory from ");
-  jsiConsolePrintInt(oldBlockCount);
-  jsiConsolePrint(" blocks to ");
-  jsiConsolePrintInt(newBlockCount);
-  jsiConsolePrint("\n");*/
+  // jsiConsolePrintf("Resized memory from %d blocks to %d\n", oldBlockCount, newBlockCount);
 #else
   NOT_USED(jsNewVarCount);
   assert(0);
@@ -194,9 +190,7 @@ void jsvShowAllocated() {
   JsVarRef i;
   for (i=1;i<=jsVarsSize;i++) {
     if ((jsvGetAddressOf(i)->flags&JSV_VARTYPEMASK) != JSV_UNUSED) {
-      jsiConsolePrint("USED VAR #");
-      jsiConsolePrintInt(i);
-      jsiConsolePrint(":");
+      jsiConsolePrintf("USED VAR #%d:",i);
       jsvTrace(i, 2);
     }
   }
@@ -490,17 +484,6 @@ JsVar *jsvNewStringOfLength(unsigned int byteLength) {
     return first;
 }
 
-JsVar *jsvNewFromLexer(struct JsLex *lex, JslCharPos charFrom, JslCharPos charTo) {
-  // Create a var
-  JsVar *var = jsvNewFromEmptyString();
-  if (!var) { // out of memory
-    return 0;
-  }
-
-  jsvAppendStringVar(var, lex->sourceVar, charFrom, (JslCharPos)charTo-charFrom);
-  return var;
-}
-
 JsVar *jsvNewWithFlags(JsVarFlags flags) {
   JsVar *var = jsvNew();
   if (!var) return 0; // no memory
@@ -615,6 +598,18 @@ const char *jsvGetConstString(const JsVar *v) {
     return 0;
 }
 
+/// Return the 'type' of the JS variable (eg. JS's typeof operator)
+const char *jsvGetTypeOf(const JsVar *v) {
+  if (jsvIsNull(v)) return "object";
+  if (jsvIsUndefined(v)) return "undefined";
+  if (jsvIsFunction(v)) return "function";
+  if (jsvIsObject(v) || jsvIsArray(v)) return "object";
+  if (jsvIsString(v)) return "string";
+  if (jsvIsBoolean(v)) return "boolean";
+  if (jsvIsNumeric(v)) return "number";
+  return "?";
+}
+
 /// Save this var as a string to the given buffer, and return how long it was (return val doesn't include terminating 0)
 size_t jsvGetString(const JsVar *v, char *str, size_t len) {
    const char *s = jsvGetConstString(v);
@@ -625,11 +620,11 @@ size_t jsvGetString(const JsVar *v, char *str, size_t len) {
      itoa(v->varData.integer, str, 10);
      return strlen(str);
    } else if (jsvIsFloat(v)) {
-     ftoa(v->varData.floating, str);
+     ftoa_bounded(v->varData.floating, str, len);
      return strlen(str);
    } else if (jsvHasCharacterData(v)) {
        if (jsvIsStringExt(v))
-        jsWarn("INTERNAL: Calling jsvGetString on a JSV_STRING_EXT");
+         jsErrorInternal("Calling jsvGetString on a JSV_STRING_EXT");
       size_t l = len;
       JsvStringIterator it;
       jsvStringIteratorNewConst(&it, v, 0);
@@ -655,7 +650,7 @@ size_t jsvGetString(const JsVar *v, char *str, size_t len) {
         return l;
       } else {
         strncpy(str, "", len);
-        jsWarn("INTERNAL: variable type cannot be converted to string");
+        jsErrorInternal("Variable type cannot be converted to string");
         return 0;
       }
     }
@@ -688,20 +683,18 @@ JsVar *jsvAsString(JsVar *v, bool unlockVar) {
     str = jsvLockAgain(v);
   } else {
     const char *constChar = jsvGetConstString(v);
+    char buf[JS_NUMBER_BUFFER_SIZE];
     if (constChar) {
       // if we could get this as a simple const char, do that..
       str = jsvNewFromString(constChar);
     } else if (jsvIsPin(v)) {
-      char buf[8];
       jshGetPinString(buf, (Pin)v->varData.integer);
       str = jsvNewFromString(buf);
     } else if (jsvIsInt(v)) {
-      char buf[JS_NUMBER_BUFFER_SIZE];
       itoa(v->varData.integer, buf, 10);
       str = jsvNewFromString(buf);
     } else if (jsvIsFloat(v)) {
-      char buf[JS_NUMBER_BUFFER_SIZE];
-      ftoa(v->varData.floating, buf);
+      ftoa_bounded(v->varData.floating, buf, sizeof(buf));
       str = jsvNewFromString(buf);
     } else if (jsvIsArray(v) || jsvIsArrayBuffer(v)) {
       JsVar *filler = jsvNewFromString(",");
@@ -711,7 +704,7 @@ JsVar *jsvAsString(JsVar *v, bool unlockVar) {
       str = jsvNewFromEmptyString();
       if (str) jsfGetJSON(v, str);
     } else {
-      jsWarn("INTERNAL: variable type cannot be converted to string");
+      jsErrorInternal("Variable type cannot be converted to string");
       str = 0;
     }
   }
@@ -893,16 +886,22 @@ void jsvAppendStringBuf(JsVar *var, const char *str, int length) {
   jsvUnLock(block);
 }
 
-void jsvAppendInteger(JsVar *var, JsVarInt i) {
-  char buf[32];
-  itoa(i,buf,10);
-  jsvAppendString(var, buf);
+static void _jsvAppendPrintf(const char *str, void *user_data) {
+  while (*str)
+    jsvStringIteratorAppend((JsvStringIterator *)user_data, *(str++));
 }
 
-void jsvAppendPin(JsVar *var, Pin pin) {
-  char buf[8];
-  jshGetPinString(buf, pin);
-  jsvAppendString(var, buf);
+void jsvAppendPrintf(JsVar *var, const char *fmt, ...) {
+  JsvStringIterator it;
+  jsvStringIteratorNew(&it, var, 0);
+  jsvStringIteratorGotoEnd(&it);
+
+  va_list argp;
+  va_start(argp, fmt);
+  vcbprintf((vcbprintf_callback)&_jsvAppendPrintf,&it, fmt, argp);
+  va_end(argp);
+
+  jsvStringIteratorFree(&it);
 }
 
 /** Append str to var. Both must be strings. stridx = start char or str, maxLength = max number of characters (can be JSVAPPENDSTRINGVAR_MAXLENGTH).
@@ -1003,9 +1002,9 @@ bool jsvIsStringNumericStrict(const JsVar *var) {
 }
 
 JsVarInt jsvGetInteger(const JsVar *v) {
-    if (!v) return 0;
+    if (!v) return 0; // undefined
     /* strtol understands about hex and octal */
-    if (jsvIsInt(v) || jsvIsBoolean(v) || jsvIsArrayBufferName(v)) return v->varData.integer;
+    if (jsvIsInt(v) || jsvIsBoolean(v) || jsvIsPin(v) || jsvIsArrayBufferName(v)) return v->varData.integer;
     if (jsvIsNull(v)) return 0;
     if (jsvIsUndefined(v)) return 0;
     if (jsvIsFloat(v)) return (JsVarInt)v->varData.floating;
@@ -1027,17 +1026,23 @@ bool jsvGetBool(const JsVar *v) {
 }
 
 JsVarFloat jsvGetFloat(const JsVar *v) {
-    if (!v) return 0;
+    if (!v) return NAN; // undefined
     if (jsvIsFloat(v)) return v->varData.floating;
     if (jsvIsInt(v)) return (JsVarFloat)v->varData.integer;
     if (jsvIsNull(v)) return 0;
-    if (jsvIsUndefined(v)) return 0;
-    if (jsvIsString(v) && jsvIsStringNumeric(v)) {
+    if (jsvIsString(v)) {
       char buf[32];
       jsvGetString(v, buf, sizeof(buf));
       return stringToFloat(buf);
     }
-    return 0; /* or NaN? */
+    return NAN;
+}
+
+/// Convert the given variable to a number
+JsVar *jsvAsNumber(JsVar *var) {
+  if (jsvIsInt(var) || jsvIsFloat(var)) return jsvLockAgain(var);
+  if (jsvIsBoolean(var) || jsvIsPin(var)) return jsvNewFromInteger(var->varData.integer);
+  return jsvNewFromFloat(jsvGetFloat(var));
 }
 
 #ifdef SAVE_ON_FLASH
@@ -1208,7 +1213,7 @@ JsVar *jsvCopyNameOnly(JsVar *src, bool linkChildren, bool keepAsName) {
   if (!keepAsName) flags &= (JsVarFlags)~JSV_NAME; // make sure this is NOT a name
   JsVar *dst = jsvNewWithFlags(flags);
   if (!dst) return 0; // out of memory
-  
+
   memcpy(&dst->varData, &src->varData, sizeof(JsVarData));
 
   dst->lastChild = 0;
@@ -1569,7 +1574,6 @@ size_t jsvCountJsVarsUsed(JsVar *v) {
     }
   }
   if (jsvHasCharacterData(v)) {
-    size_t count = 0;
     JsVarRef childref = v->lastChild;
     while (childref) {
       JsVar *child = jsvLock(childref);
@@ -1587,21 +1591,64 @@ size_t jsvCountJsVarsUsed(JsVar *v) {
 }
 
 
-JsVar *jsvGetArrayItem(JsVar *arr, int index) {
-  JsVarRef childref = arr->firstChild;
+JsVar *jsvGetArrayItem(JsVar *arr, JsVarInt index) {
+  JsVarRef childref = arr->lastChild;
+  JsVarInt lastArrayIndex = 0;
+  // Look at last non-string element!
   while (childref) {
-    JsVarInt childIndex;
     JsVar *child = jsvLock(childref);
-    
-    assert(jsvIsInt(child));
-    childIndex = jsvGetInteger(child);
-    if (childIndex == index) {
-      JsVar *item = child->firstChild ? jsvLock(child->firstChild) : 0;
+    if (jsvIsInt(child)) {
+      lastArrayIndex = jsvGetInteger(child);
+      // it was the last element... sorted!
+      if (lastArrayIndex == index) {
+        JsVar *item = child->firstChild ? jsvLock(child->firstChild) : 0;
+        jsvUnLock(child);
+        return item;
+      }
       jsvUnLock(child);
-      return item;
+      break;
     }
-    childref = child->nextSibling;
+    // if not an int, keep going
+    childref = child->prevSibling;
     jsvUnLock(child);
+  }
+  // it's not in this array - don't search the whole lot...
+  if (index > lastArrayIndex)
+    return 0;
+  // otherwise is it more than halfway through?
+  if (index > lastArrayIndex/2) {
+    // it's in the final half of the array (probably) - search backwards
+    while (childref) {
+      JsVarInt childIndex;
+      JsVar *child = jsvLock(childref);
+
+      assert(jsvIsInt(child));
+      childIndex = jsvGetInteger(child);
+      if (childIndex == index) {
+        JsVar *item = child->firstChild ? jsvLock(child->firstChild) : 0;
+        jsvUnLock(child);
+        return item;
+      }
+      childref = child->prevSibling;
+      jsvUnLock(child);
+    }
+  } else {
+    // it's in the first half of the array (probably) - search forwards
+    childref = arr->firstChild;
+    while (childref) {
+      JsVarInt childIndex;
+      JsVar *child = jsvLock(childref);
+
+      assert(jsvIsInt(child));
+      childIndex = jsvGetInteger(child);
+      if (childIndex == index) {
+        JsVar *item = child->firstChild ? jsvLock(child->firstChild) : 0;
+        jsvUnLock(child);
+        return item;
+      }
+      childref = child->nextSibling;
+      jsvUnLock(child);
+    }
   }
   return 0; // undefined
 }
@@ -1622,7 +1669,7 @@ JsVar *jsvGetArrayIndexOf(JsVar *arr, JsVar *value, bool matchExact) {
         return childIndex;
       }
       jsvUnLock(childValue);
-    } else if (jsvIsUndefined(value)) 
+    } else if (jsvIsUndefined(value))
       return childIndex; // both are undefined, so we return the index
     indexref = childIndex->nextSibling;
     jsvUnLock(childIndex);
@@ -1650,6 +1697,13 @@ JsVarInt jsvArrayPush(JsVar *arr, JsVar *value) {
   return jsvArrayPushWithInitialSize(arr, value, 0);
 }
 
+/// Adds a new element to the end of an array, unlocks it, and returns the new length
+JsVarInt jsvArrayPushAndUnLock(JsVar *arr, JsVar *value) {
+  JsVarInt l = jsvArrayPushWithInitialSize(arr, value, 0);
+  jsvUnLock(value);
+  return l;
+}
+
 /// Removes the last element of an array, and returns that element (or 0 if empty). includes the NAME
 JsVar *jsvArrayPop(JsVar *arr) {
   assert(jsvIsArray(arr));
@@ -1672,7 +1726,7 @@ JsVar *jsvArrayPop(JsVar *arr) {
   }
 }
 
-/// Removes the first element of an array, and returns that element (or 0 if empty). 
+/// Removes the first element of an array, and returns that element (or 0 if empty).
 JsVar *jsvArrayPopFirst(JsVar *arr) {
   assert(jsvIsArray(arr));
   if (arr->firstChild) {
@@ -1699,7 +1753,7 @@ JsVar *jsvArrayGetLast(JsVar *arr) {
   assert(jsvIsArray(arr));
   if (arr->lastChild) {
     return jsvLock(arr->lastChild);
-  } else { // no children!    
+  } else { // no children!
     return 0;
   }
 }
@@ -1815,7 +1869,7 @@ JsVar *jsvMathsOp(JsVar *a, JsVar *b, int op) {
     bool needsNumeric = needsInt || op=='*' || op=='/' || op=='%' || op=='-';
 
     // do maths...
-    if ((jsvIsUndefined(a) || jsvIsNull(a)) && (jsvIsUndefined(b) || jsvIsNull(b))) {
+    if (jsvIsUndefined(a) && jsvIsUndefined(b)) {
       if (op == LEX_EQUAL)
         return jsvNewFromBool(true);
       else if (op == LEX_NEQUAL)
@@ -1823,9 +1877,9 @@ JsVar *jsvMathsOp(JsVar *a, JsVar *b, int op) {
       else
         return 0; // undefined
     } else if (needsNumeric ||
-               ((jsvIsNumeric(a) || jsvIsUndefined(a)) &&
-                (jsvIsNumeric(b) || jsvIsUndefined(b)))) {
-        if (needsInt || (!jsvIsFloat(a) && !jsvIsFloat(b))) {
+               ((jsvIsNumeric(a) || jsvIsUndefined(a) || jsvIsNull(a)) &&
+                (jsvIsNumeric(b) || jsvIsUndefined(b) || jsvIsNull(b)))) {
+      if (needsInt || !(jsvIsFloat(a) || jsvIsFloat(b))) {
             // use ints
             JsVarInt da = jsvGetInteger(a);
             JsVarInt db = jsvGetInteger(b);
@@ -1920,13 +1974,7 @@ JsVar *jsvNegateAndUnLock(JsVar *v) {
 }
 
 void jsvTraceLockInfo(JsVar *v) {
-    jsiConsolePrint("#");
-    jsiConsolePrintInt(jsvGetRef(v));
-    jsiConsolePrint("[r");
-    jsiConsolePrintInt(v->refs);
-    jsiConsolePrint(",l");
-    jsiConsolePrintInt(jsvGetLocks(v)-1);
-    jsiConsolePrint("] ");
+    jsiConsolePrintf("#%d[r%d,l%d] ",jsvGetRef(v),v->refs,jsvGetLocks(v)-1);
 }
 
 /** Get the lowest level at which searchRef appears */
@@ -1940,7 +1988,7 @@ int _jsvTraceGetLowestLevel(JsVarRef ref, JsVarRef searchRef) {
     jsvUnLock(var);
     return -1;
   }
-  var->flags |= JSV_IS_RECURSING; 
+  var->flags |= JSV_IS_RECURSING;
 
   if (jsvHasSingleChild(var) && var->firstChild) {
     int f = _jsvTraceGetLowestLevel(var->firstChild, searchRef);
@@ -1948,7 +1996,7 @@ int _jsvTraceGetLowestLevel(JsVarRef ref, JsVarRef searchRef) {
   }
   if (jsvHasChildren(var)) {
     JsVarRef childRef = var->firstChild;
-    while (childRef) {       
+    while (childRef) {
       int f = _jsvTraceGetLowestLevel(childRef, searchRef);
       if (f>=0 && (found<0 || f<found)) found=f+1;
 
@@ -1980,7 +2028,7 @@ void _jsvTrace(JsVarRef ref, int indent, JsVarRef baseRef, int level) {
     jsiConsolePrint(":");
     jsiConsolePrintInt(_jsvTraceGetLowestLevel(baseRef, ref));
     jsiConsolePrint("> ");*/
-    
+
 
     JsVar *var = jsvLock(ref);
     jsvTraceLockInfo(var);
@@ -1991,21 +2039,13 @@ void _jsvTrace(JsVarRef ref, int indent, JsVarRef baseRef, int level) {
         jsiConsolePrint("Param ");
       JsVar *str = jsvAsString(var, false);
       if (jsvIsInt(var)) {
-        jsiConsolePrint("Name: int ");
-        jsiConsolePrintStringVar(str);
-        jsiConsolePrint("  ");
+        jsiConsolePrintf("Name: int %v  ", str);
       } else if (jsvIsFloat(var)) {
-        jsiConsolePrint("Name: flt ");
-        jsiConsolePrintStringVar(str);
-        jsiConsolePrint("  ");
+        jsiConsolePrintf("Name: flt %v  ", str);
       } else if (jsvIsString(var) || jsvIsFunctionParameter(var)) {
-        jsiConsolePrint("Name: '");
-        jsiConsolePrintStringVar(str);
-        jsiConsolePrint("'  ");
+        jsiConsolePrintf("Name: '%v'  ", str);
       } else if (jsvIsArrayBufferName(var)) {
-        jsiConsolePrint("ArrayBufferName[");
-        jsiConsolePrintInt(jsvGetInteger(var));
-        jsiConsolePrint("] ");
+        jsiConsolePrintf("ArrayBufferName[%d] ", jsvGetInteger(var));
       } else {
         assert(0);
       }
@@ -2049,19 +2089,17 @@ void _jsvTrace(JsVarRef ref, int indent, JsVarRef baseRef, int level) {
     else if (jsvIsArray(var)) jsiConsolePrint("Array [");
     else if (jsvIsPin(var)) jsiConsolePrint("Pin ");
     else if (jsvIsInt(var)) jsiConsolePrint("Integer ");
+    else if (jsvIsBoolean(var)) jsiConsolePrint("Bool ");
     else if (jsvIsFloat(var)) jsiConsolePrint("Double ");
     else if (jsvIsString(var)) jsiConsolePrint("String ");
     else if (jsvIsArrayBuffer(var)) {
-      jsiConsolePrint(jswGetBasicObjectName(var)); // way to get nice name
-      jsiConsolePrint(" ");
+      jsiConsolePrintf("%s ", jswGetBasicObjectName(var)); // way to get nice name
       _jsvTrace(var->firstChild, indent+1, baseRef, level+1);
       jsvUnLock(var);
       return;
     } else if (jsvIsFunction(var)) jsiConsolePrint("Function {");
     else {
-        jsiConsolePrint("Flags ");
-        jsiConsolePrintInt(var->flags & (JsVarFlags)~(JSV_LOCK_MASK));
-        jsiConsolePrint("\n");
+        jsiConsolePrintf("Flags %d\n", var->flags & (JsVarFlags)~(JSV_LOCK_MASK));
     }
 
     if (!jsvIsObject(var) && !jsvIsArray(var) && !jsvIsFunction(var)) {
@@ -2183,107 +2221,6 @@ bool jsvGarbageCollect() {
   return freedSomething;
 }
 
-/** Dotty output for the graphviz package - helps
- *  visualize the data structure  */
-void jsvDottyOutput() {
-  JsVarRef i;
-  bool ignoreStringExt = true;
-  char buf[256];
-  jsiConsolePrint("digraph G {\n");
-  //jsiConsolePrint("  rankdir=LR;\n");
-  for (i=1;i<=jsVarsSize;i++) {
-    if ((jsvGetAddressOf(i)->flags&JSV_VARTYPEMASK) != JSV_UNUSED) {
-      JsVar *var = jsvLock(i);
-      if (ignoreStringExt && jsvIsStringExt(var)) {
-        jsvUnLock(var);
-        continue;
-      }
-      jsiConsolePrint("V");
-      jsiConsolePrintInt(i);
-      jsiConsolePrint(" [shape=box,label=\"");
-      jsvTraceLockInfo(var);
-      jsiConsolePrint(":");
-      if (jsvIsName(var)) jsiConsolePrint("Name");
-      else if (jsvIsObject(var)) jsiConsolePrint("Object");
-      else if (jsvIsArray(var)) jsiConsolePrint("Array");
-      else if (jsvIsPin(var)) jsiConsolePrint("Pin");
-      else if (jsvIsInt(var)) jsiConsolePrint("Integer");
-      else if (jsvIsFloat(var)) jsiConsolePrint("Double");
-      else if (jsvIsString(var)) jsiConsolePrint("String");
-      else if (jsvIsStringExt(var)) jsiConsolePrint("StringExt");
-      else if (jsvIsFunction(var)) jsiConsolePrint("Function");
-      else {
-          jsiConsolePrint("Flags ");
-          jsiConsolePrintInt(var->flags & (JsVarFlags)~(JSV_LOCK_MASK));
-      }
-      if (!jsvIsStringExt(var) && !jsvIsObject(var) && !jsvIsArray(var)) {
-        jsiConsolePrint(":");
-        jsvGetString(var,buf,256);
-        JsvStringIterator it;
-        jsvStringIteratorNew(&it, var, 0);
-        while (jsvStringIteratorHasChar(&it)) {
-          char ch = jsvStringIteratorGetChar(&it);
-          jsiConsolePrint(escapeCharacter(ch));
-          jsvStringIteratorNext(&it);
-        }
-        jsvStringIteratorFree(&it);
-      }
-      jsiConsolePrint("\"];\n");
-
-      if (jsvHasChildren(var)) {
-        if (var->firstChild) {
-          jsiConsolePrint("V");
-          jsiConsolePrintInt(i+1);
-          jsiConsolePrint(":n -> V");
-          jsiConsolePrintInt(var->firstChild);
-          jsiConsolePrint(":n [label=\"first\"]\n");
-        }
-        if (var->lastChild) {
-          jsiConsolePrint("V");
-          jsiConsolePrintInt(var->lastChild);
-          jsiConsolePrint(":s -> V");
-          jsiConsolePrintInt(i);
-          jsiConsolePrint(":s [label=\"last\"]\n");
-        }
-      }
-      if (jsvIsName(var)) {
-        if (var->nextSibling) {
-          jsiConsolePrint("V");
-          jsiConsolePrintInt(i);
-          jsiConsolePrint(":s -> V");
-          jsiConsolePrintInt(var->nextSibling);
-          jsiConsolePrint(":n [weight=5,label=\"next\"]\n");
-        }
-        if (var->prevSibling) {
-          jsiConsolePrint("V");
-          jsiConsolePrintInt(i);
-          jsiConsolePrint(":n -> V");
-          jsiConsolePrintInt(var->prevSibling);
-          jsiConsolePrint(":s [weight=5,style=dotted,label=\"prev\"]\n");
-        }
-        if (var->firstChild) {
-          jsiConsolePrint("V");
-          jsiConsolePrintInt(i);
-          jsiConsolePrint(":e -> V");
-          jsiConsolePrintInt(var->firstChild);
-          jsiConsolePrint(":w [style=bold]\n");
-        }
-      }
-      if (!ignoreStringExt && jsvHasCharacterData(var)) {
-        if (var->lastChild) {
-          jsiConsolePrint("V");
-          jsiConsolePrintInt(i);
-          jsiConsolePrint(":e -> V");
-          jsiConsolePrintInt(var->lastChild);
-          jsiConsolePrint(":w\n");
-        }
-      }
-      jsvUnLock(var);
-    }
-  }
-  jsiConsolePrint("}\n");
-}
-
 /** Remove whitespace to the right of a string - on MULTIPLE LINES */
 JsVar *jsvStringTrimRight(JsVar *srcString) {
   JsvStringIterator src, dst;
@@ -2334,9 +2271,10 @@ void jsvStringIteratorNew(JsvStringIterator *it, JsVar *str, int startIdx) {
   it->var = jsvLockAgain(str);
   it->charsInVar = jsvGetCharactersInVar(str);
   it->charIdx = (size_t)startIdx;
-  it->index = (size_t)startIdx;
+  it->varIndex = 0;
   while (it->charIdx>0 && it->charIdx >= it->charsInVar) {
     it->charIdx -= it->charsInVar;
+    it->varIndex += it->charsInVar;
     if (it->var) {
       if (it->var->lastChild) {
         JsVar *next = jsvLock(it->var->lastChild);
@@ -2347,29 +2285,29 @@ void jsvStringIteratorNew(JsvStringIterator *it, JsVar *str, int startIdx) {
         jsvUnLock(it->var);
         it->var = 0;
         it->charsInVar = 0;
-        return; // get out of loop
+        it->varIndex = (size_t)(startIdx - it->charIdx);
+        return; // at end of string - get out of loop
       }
     }
   }
+  it->varIndex = (size_t)(startIdx - it->charIdx);
 }
 
 void jsvStringIteratorNext(JsvStringIterator *it) {
-  if (!it->var) return;
-  it->charIdx++;
-  it->index++;
-  if (it->charIdx >= it->charsInVar) {
-    it->charIdx -= it->charsInVar;
-    if (it->var->lastChild) {
-      JsVar *next = jsvLock(it->var->lastChild);
-      jsvUnLock(it->var);
-      it->var = next;
-      it->charsInVar = jsvGetCharactersInVar(it->var);
-    } else {
-      jsvUnLock(it->var);
-      it->var = 0;
-      it->charsInVar = 0;
-    }
-  }
+  jsvStringIteratorNextInline(it);
+}
+
+void jsvStringIteratorGotoEnd(JsvStringIterator *it) {
+  assert(it->var);
+  while (it->var->lastChild) {
+     JsVar *next = jsvLock(it->var->lastChild);
+     jsvUnLock(it->var);
+     it->var = next;
+     it->varIndex += it->charsInVar;
+     it->charsInVar = jsvGetCharactersInVar(it->var);
+   }
+  if (it->charsInVar) it->charIdx = it->charsInVar-1;
+  else it->charIdx = 0;
 }
 
 void jsvStringIteratorAppend(JsvStringIterator *it, char ch) {
@@ -2377,7 +2315,6 @@ void jsvStringIteratorAppend(JsvStringIterator *it, char ch) {
   if (it->charsInVar>0) {
     assert(it->charIdx+1 == it->charsInVar /* check at end */);
     it->charIdx++;
-    it->index++;
   } else
     assert(it->charIdx == 0);
   if (it->charIdx >= jsvGetMaxCharactersInVar(it->var)) {
@@ -2388,7 +2325,7 @@ void jsvStringIteratorAppend(JsvStringIterator *it, char ch) {
     it->var->lastChild = jsvGetRef(next);
     jsvUnLock(it->var);
     it->var = next;
-
+    it->varIndex += it->charIdx;
     it->charIdx = 0; // it's new, so empty
   }
 

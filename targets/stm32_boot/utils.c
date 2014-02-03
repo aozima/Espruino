@@ -90,6 +90,11 @@ void USB_LP_CAN1_RX0_IRQHandler(void)
   USB_Istr();
 }
 
+void USBWakeUp_IRQHandler(void)
+{
+  EXTI_ClearITPendingBit(EXTI_Line18);
+}
+
 unsigned int SysTickUSBWatchdog = SYSTICKS_BEFORE_USB_DISCONNECT;
 
 void jshKickUSBWatchdog() {
@@ -174,13 +179,6 @@ void initHardware() {
        RCC_APB2Periph_GPIOG |
        RCC_APB2Periph_AFIO, ENABLE);
 #endif
-#ifdef ESPRUINOBOARD
-  // reclaim A13 and A14 for the LEDs
-  GPIO_PinRemapConfig(GPIO_Remap_SWJ_Disable, ENABLE); // Disable JTAG/SWD so pins are available
-#endif
-
-  RCC_PCLK1Config(RCC_HCLK_Div8); // PCLK1 must be >8 Mhz for USB to work
-  RCC_PCLK2Config(RCC_HCLK_Div16);
 
   // if button is not set, jump to this address
   if (jshPinGetValue(BTN1_PININDEX) != BTN1_ONSTATE) {
@@ -188,6 +186,15 @@ void initHardware() {
     void (*startPtr)() = *ResetHandler;
     startPtr();
   }
+
+  RCC_PCLK1Config(RCC_HCLK_Div2); // PCLK1 must be >13 Mhz for USB to work (see STM32F103 C/D/E errata)
+  RCC_PCLK2Config(RCC_HCLK_Div4);
+
+#ifdef ESPRUINOBOARD
+  // reclaim A13 and A14 for the LEDs
+  GPIO_PinRemapConfig(GPIO_Remap_SWJ_Disable, ENABLE); // Disable JTAG/SWD so pins are available
+#endif
+
 
   /* System Clock */
   SysTick_CLKSourceConfig(SysTick_CLKSource_HCLK_Div8);

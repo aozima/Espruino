@@ -17,7 +17,6 @@
 
 #include "platform_config.h"
 #include "jshardware.h"
-#include "jshardware_pininfo.h"
 #include "jsinteractive.h" // for debug
 #include "graphics.h"
 
@@ -251,7 +250,7 @@ void LCD_init_panel() {
 	uint16_t DeviceCode;
 	delay_ms(100);
 	DeviceCode = LCD_RD_CMD(0x0000);	
-//        jsiConsolePrint("LCDA "); jsiConsolePrintInt(DeviceCode); jsiConsolePrint("\n");
+//        jsiConsolePrintf("LCDA %d\n", DeviceCode);
 
         if (DeviceCode == 0x4532) { // For the 2.4" LCD boards
                 LCD_Code = ILI9325;

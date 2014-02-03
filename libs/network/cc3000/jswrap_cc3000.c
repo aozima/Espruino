@@ -19,6 +19,7 @@
 #include "jshardware.h"
 #include "jsinteractive.h"
 #include "board_spi.h"
+#include "../network.h"
 // ti driver
 #include "wlan.h"
 #include "netapp.h"
@@ -42,7 +43,6 @@ JsVar *jswrap_cc3000_connect() {
   return wlanObj;
 }
 
-
 /*JSON{ "type":"class",
         "class" : "WLAN",
         "description" : "An instantiation of a WiFi network adaptor"
@@ -59,9 +59,15 @@ JsVar *jswrap_cc3000_connect() {
 }*/
 JsVarInt jswrap_wlan_connect(JsVar *wlanObj, JsVar *vAP, JsVar *vKey, JsVar *callback) {
   if (!(jsvIsUndefined(callback) || jsvIsFunction(callback))) {
-    jsError("Expecting callback function");
+    jsError("Expecting callback Function but got %t", callback);
     return 0;
   }
+  // if previously completely disconnected, try and reconnect
+  if (jsvGetBoolAndUnLock(jsvObjectGetChild(wlanObj,JS_HIDDEN_CHAR_STR"DISC",0))) {
+    cc3000_initialise(wlanObj);
+    jsvUnLock(jsvObjectSetChild(wlanObj,JS_HIDDEN_CHAR_STR"DISC", jsvNewFromBool(false)));
+  }
+
   if (jsvIsFunction(callback)) {
     jsvObjectSetChild(wlanObj, CC3000_ON_STATE_CHANGE, callback);
   }
@@ -74,16 +80,28 @@ JsVarInt jswrap_wlan_connect(JsVar *wlanObj, JsVar *vAP, JsVar *vKey, JsVar *cal
     jsvGetString(vKey, key, sizeof(key));
   }
   // might want to set wlan_ioctl_set_connection_policy
-  return wlan_connect(security, ap, strlen(ap), NULL, key, strlen(key));
+  return wlan_connect(security, ap, (long)strlen(ap), NULL, (unsigned char*)key, (long)strlen(key));
+  // note that we're only online (for networkState) when DHCP succeeds
 }
 
+/*JSON{ "type":"method",
+         "class" : "WLAN", "name" : "disconnect",
+         "generate" : "jswrap_wlan_disconnect",
+         "description" : "Completely uninitialise and power down the CC3000. After this you'll have to use ```require(\"CC3000\").connect()``` again."
+}*/
+void jswrap_wlan_disconnect(JsVar *wlanObj) {
+  jsvUnLock(jsvObjectSetChild(wlanObj,JS_HIDDEN_CHAR_STR"DISC", jsvNewFromBool(true)));
+  networkState = NETWORKSTATE_OFFLINE; // force offline
+  //wlan_disconnect();
+  wlan_stop();
+}
 
-void _wlan_getIP_get_address(JsVar *object, const char *name,  unsigned char *ip, int nBytes, int base, char separator) {
+static void NO_INLINE _wlan_getIP_get_address(JsVar *object, const char *name,  unsigned char *ip, int nBytes, unsigned int base, char separator) {
   char data[64] = "";
   int i, l = 0;
   for (i=nBytes-1;i>=0;i--) {
-    itoa(ip[i], &data[l], base);
-    l = strlen(data);
+    itoa((int)ip[i], &data[l], base);
+    l = (int)strlen(data);
     if (i>0 && separator) {
       data[l++] = separator;
       data[l] = 0;
@@ -110,16 +128,23 @@ void _wlan_getIP_get_address(JsVar *object, const char *name,  unsigned char *ip
          "return" : ["JsVar", ""]
 }*/
 JsVar *jswrap_wlan_getIP(JsVar *wlanObj) {
+  NOT_USED(wlanObj);
+
+  if (networkState != NETWORKSTATE_ONLINE) {
+    jsError("Not connected to the internet");
+    return 0;
+  }
+
   tNetappIpconfigRetArgs ipconfig;
   netapp_ipconfig(&ipconfig);
   /* If byte 1 is 0 we don't have a valid address */
   if (ipconfig.aucIP[3] == 0) return 0;
   JsVar *data = jsvNewWithFlags(JSV_OBJECT);
-  _wlan_getIP_get_address(data, "ip", &ipconfig.aucIP, 4, 10, '.');
-  _wlan_getIP_get_address(data, "subnet", &ipconfig.aucSubnetMask, 4, 10, '.');
-  _wlan_getIP_get_address(data, "gateway", &ipconfig.aucDefaultGateway, 4, 10, '.');
-  _wlan_getIP_get_address(data, "dhcp", &ipconfig.aucDHCPServer, 4, 10, '.');
-  _wlan_getIP_get_address(data, "dns", &ipconfig.aucDNSServer, 4, 10, '.');
-  _wlan_getIP_get_address(data, "mac", &ipconfig.uaMacAddr, 6, 16, 0);
+  _wlan_getIP_get_address(data, "ip", &ipconfig.aucIP[0], 4, 10, '.');
+  _wlan_getIP_get_address(data, "subnet", &ipconfig.aucSubnetMask[0], 4, 10, '.');
+  _wlan_getIP_get_address(data, "gateway", &ipconfig.aucDefaultGateway[0], 4, 10, '.');
+  _wlan_getIP_get_address(data, "dhcp", &ipconfig.aucDHCPServer[0], 4, 10, '.');
+  _wlan_getIP_get_address(data, "dns", &ipconfig.aucDNSServer[0], 4, 10, '.');
+  _wlan_getIP_get_address(data, "mac", &ipconfig.uaMacAddr[0], 6, 16, 0);
   return data;
 }

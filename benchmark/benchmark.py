@@ -17,11 +17,13 @@ import serial
 import sys
 import json
 
-def run_benchmark(filename):
+DUMP_OUTPUT=False
+
+def run_benchmark(device, filename):
         benchmark = open(filename).read();
        
 	ser = serial.Serial(
-		port='/dev/ttyACM0', # or /dev/ttyAMA0 for serial on the PI
+		port=device, # or /dev/ttyAMA0 for serial on the PI
 		baudrate=9600,
 		parity=serial.PARITY_NONE,
 		stopbits=serial.STOPBITS_ONE,
@@ -44,11 +46,11 @@ def run_benchmark(filename):
 	#ser.write(command)
         for c in command:
           ser.write(c);
-#          time.sleep(0.01)
           while ser.inWaiting() > 0:
             c = ser.read(1)
-            sys.stdout.write(c)
-            sys.stdout.flush()
+            if DUMP_OUTPUT: 
+              sys.stdout.write(c)
+              sys.stdout.flush()
             result=result+c
 
 	endtime = time.time()+60 # wait 60 sec
@@ -56,8 +58,9 @@ def run_benchmark(filename):
         while time.time() < endtime and not finished:
           while ser.inWaiting() > 0:
             c = ser.read(1)
-            sys.stdout.write(c)
-            sys.stdout.flush()
+            if DUMP_OUTPUT: 
+              sys.stdout.write(c)
+              sys.stdout.flush()
             result=result+c
           finished = "<<<<<" in result and ">>>>>" in result
 	ser.close()
@@ -69,9 +72,9 @@ def run_benchmark(filename):
 # Read 3 analogs into an array
 #print espruino_cmd("print([analogRead(A1),analogRead(A2),analogRead(A3)])").strip().split(',')
 
-if len(sys.argv)!=2:
-  print "USAGE: benchmark.py simple_loop.js"
+if len(sys.argv)!=3:
+  print "USAGE: benchmark.py /dev/ttyACM0 simple_loop.js"
   exit(1)
 
-print "TIME = "+run_benchmark(sys.argv[1])
+print "TIME['"+sys.argv[2]+"'] = "+run_benchmark(sys.argv[1], sys.argv[2])
 	

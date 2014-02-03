@@ -21,8 +21,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #endif
+#include <stdarg.h> // for va_args
 
-#define JS_VERSION "1v43"
+#define JS_VERSION "1v49"
 /*
   In code:
   TODO - should be fixed
@@ -45,6 +46,9 @@ typedef enum {FALSE = 0, TRUE = !FALSE} bool;
 
 #define true (1)
 #define false (0)
+#define NAN (((JsVarFloat)0)/(JsVarFloat)0)
+#define DBL_MIN 2.2250738585072014e-308
+#define DBL_MAX 1.7976931348623157e+308
 
 /* Number of Js Variables allowed and Js Reference format. 
 
@@ -82,9 +86,6 @@ typedef enum {FALSE = 0, TRUE = !FALSE} bool;
   #endif
 #endif
 
-/// TODO: make this unsigned char and fix checks/warnings
-typedef short Pin; ///< for specifying pins for hardware
-
 typedef long long JsVarInt;
 typedef unsigned long long JsVarIntUnsigned;
 #ifdef USE_FLOATS
@@ -93,7 +94,6 @@ typedef float JsVarFloat;
 typedef double JsVarFloat;
 #endif
 
-typedef short JslCharPos;
 #define JSSYSTIME_MAX 0x7FFFFFFFFFFFFFFFLL
 typedef long long JsSysTime;
 
@@ -133,8 +133,11 @@ typedef long long JsSysTime;
  #define assert(X) 
 #endif
 
-// Used when we have enums we want to squash down
+/// Used when we have enums we want to squash down
 #define PACKED_FLAGS  __attribute__ ((__packed__))  
+
+/// Used before functions that we want to ensure are not inlined (eg. "void NO_INLINE foo() {}")
+#define NO_INLINE __attribute__ ((noinline))
 
 /// Maximum amount of locks we ever expect to have on a variable (this could limit recursion) must be 2^n-1
 #define JSV_LOCK_MAX  15
@@ -218,6 +221,7 @@ typedef enum LEX_TYPES {
     LEX_INT,
     LEX_FLOAT,
     LEX_STR,
+    LEX_UNFINISHED_COMMENT,
 
     LEX_EQUAL,
     LEX_TYPEEQUAL,
@@ -272,6 +276,12 @@ typedef enum LEX_TYPES {
     LEX_R_LIST_END /* always the last entry */
 } LEX_TYPES;
 
+// To handle variable size bit fields
+#define BITFIELD_DECL(BITFIELD, N) unsigned int BITFIELD[(N+31)/32]
+#define BITFIELD_GET(BITFIELD, N) ((BITFIELD[(N)>>5] >> ((N)&31))&1)
+#define BITFIELD_SET(BITFIELD, N, VALUE) (BITFIELD[(N)>>5] = (BITFIELD[(N)>>5]& (unsigned int)~(1 << ((N)&31))) | (unsigned int)((VALUE)?(1 << ((N)&31)):0)  )
+
+
 static inline bool isWhitespace(char ch) {
     return (ch==' ') || (ch=='\t') || (ch=='\n') || (ch=='\r');
 }
@@ -296,7 +306,7 @@ bool isIDString(const char *s);
 so you can't store the value it returns in a variable and call it again. */
 const char *escapeCharacter(char ch);
 /* convert a number in the given radix to an int. if radix=0, autodetect */
-JsVarInt stringToIntWithRadix(const char *s, JsVarInt radix);
+JsVarInt stringToIntWithRadix(const char *s, int radix, bool *hasError);
 /* convert hex, binary, octal or decimal string into an int */
 JsVarInt stringToInt(const char *s);
 
@@ -304,9 +314,10 @@ JsVarInt stringToInt(const char *s);
 struct JsLex;
 // ------------
 
-void jsError(const char *message);
+void jsError(const char *fmt, ...);
+void jsErrorInternal(const char *fmt, ...);
 void jsErrorAt(const char *message, struct JsLex *lex, int tokenPos);
-void jsWarn(const char *message);
+void jsWarn(const char *fmt, ...);
 void jsWarnAt(const char *message, struct JsLex *lex, int tokenPos);
 void jsAssertFail(const char *file, int line, const char *expr);
 
@@ -317,14 +328,8 @@ char *strncpy(char *dst, const char *src, size_t c);
 size_t strlen(const char *s);
 int strcmp(const char *a, const char *b);
 void *memcpy(void *dst, const void *src, size_t size);
-void *memset(void *dst, int val, size_t size);
 #define RAND_MAX (0xFFFFFFFFU)
 unsigned int rand();
-#else
-// FIXME: use itoa/ftoa direct - sprintf is huge
-//#define itoa(val,str,base) sprintf(str,"%d",(int)val)
-//#define ftoa(val,str) sprintf(str,"%f",val)
-
 #endif
 
 JsVarFloat stringToFloat(const char *str);
@@ -333,9 +338,28 @@ JsVarFloat stringToFloat(const char *str);
 void itoa(JsVarInt val,char *str,unsigned int base);
 #endif
 char itoch(int val);
-void ftoa(JsVarFloat val,char *str);
+void ftoa_bounded(JsVarFloat val,char *str, size_t len);
 
 /// Wrap a value so it is always between 0 and size (eg. wrapAround(angle, 360))
 JsVarFloat wrapAround(JsVarFloat val, JsVarFloat size);
+
+
+typedef void (*vcbprintf_callback)(const char *str, void *user_data);
+/** Espruino-special printf with a callback
+ * Supported are:
+ *   %d = int
+ *   %x = int as hex
+ *   %L = JsVarInt
+ *   %Lx = JsVarInt as hex
+ *   %f = JsVarFloat
+ *   %s = string (char *)
+ *   %c = char
+ *   %v = JsVar *
+ *   %p = Pin
+ *
+ * Anything else will assert
+ */
+void vcbprintf(vcbprintf_callback user_callback, void *user_data, const char *fmt, va_list argp);
+
 
 #endif /* JSUTILS_H_ */

@@ -49,8 +49,13 @@ LINUX = board.chip["family"]=="LINUX"
 if not "default_console" in board.info:
   board.info["default_console"] = "EV_SERIAL1"
 
+has_bootloader = False
+if "bootloader" in board.info and board.info["bootloader"]!=0:
+  has_bootloader = True
+
 if not LINUX:
-  if board.chip["part"]=="STM32F100RB" or board.chip["part"]=="STM32F103RB" or board.chip["part"]=="STM32F103TB": board.chip["subfamily"]="MD";
+  # 100xB and 103xB are mid-density, so have 1k page sizes
+  if board.chip["part"][:7]=="STM32F1" and board.chip["part"][10]=="B": board.chip["subfamily"]="MD";
 
   # how much room for stack (and EVERYTHING else)
   space_for_stack = 4 #kB
@@ -77,11 +82,13 @@ if not LINUX:
   if board.chip["family"]=="STM32F4": flash_page_size = 128*1024
   flash_pages = (flash_needed+flash_page_size-1)/flash_page_size
   total_flash = board.chip["flash"]*1024
-  flash_available_for_code = total_flash - flash_pages*flash_page_size
+  flash_available_for_code = total_flash - (flash_pages*flash_page_size)
+  if has_bootloader: flash_available_for_code -= common.get_bootloader_size()
 
   print "Variables = "+str(variables)
   print "JsVar size = "+str(var_size)
   print "VarCache size = "+str(var_cache_size)
+  print "Flash page size = "+str(flash_page_size)
   print "Flash pages = "+str(flash_pages)
   print "Total flash = "+str(total_flash)
   print "Flash available for code = "+str(flash_available_for_code)
@@ -202,8 +209,14 @@ else:
   codeOut("#define JSVAR_CACHE_SIZE                "+str(variables)+" // Number of JavaScript variables in RAM")
   codeOut("#define FLASH_AVAILABLE_FOR_CODE        "+str(flash_available_for_code))
   codeOut("#define FLASH_PAGE_SIZE                 "+str(flash_page_size))
-  codeOut("#define FLASH_PAGES                     "+str(flash_pages))
-  codeOut("#define BOOTLOADER_SIZE                 "+str(common.get_bootloader_size()))
+  codeOut("#define FLASH_SAVED_CODE_PAGES          "+str(flash_pages))
+  codeOut("#define FLASH_START                     "+str(0x08000000))
+  if has_bootloader: codeOut("#define BOOTLOADER_SIZE                 "+str(common.get_bootloader_size()))
+  codeOut("")
+  codeOut("#define FLASH_SAVED_CODE_LENGTH (FLASH_PAGE_SIZE*FLASH_SAVED_CODE_PAGES)")
+  codeOut("#define FLASH_SAVED_CODE_START (FLASH_START + FLASH_TOTAL - FLASH_SAVED_CODE_LENGTH)")
+  codeOut("#define FLASH_MAGIC_LOCATION (FLASH_SAVED_CODE_START + FLASH_SAVED_CODE_LENGTH - 4)")
+  codeOut("#define FLASH_MAGIC 0xDEADBEEF")
 codeOut("");
 codeOut("#define USARTS                          "+str(board.chip["usart"]))
 codeOut("#define SPIS                            "+str(board.chip["spi"]))
@@ -213,24 +226,48 @@ codeOut("#define DACS                            "+str(board.chip["dac"]))
 codeOut("");
 codeOut("#define DEFAULT_CONSOLE_DEVICE              "+board.info["default_console"]);
 codeOut("");
-codeOut("#define IOBUFFERMASK 31 // (max 255) amount of items in event buffer - events take ~9 bytes each")
-codeOut("#define TXBUFFERMASK 31 // (max 255)")
+if LINUX:
+  bufferSizeIO = 256
+  bufferSizeTX = 256
+else:
+  bufferSizeIO = 32 if total_flash<20480 else 64
+  bufferSizeTX = 32 if total_flash<20480 else 128
+codeOut("#define IOBUFFERMASK "+str(bufferSizeIO-1)+" // (max 255) amount of items in event buffer - events take ~9 bytes each")
+codeOut("#define TXBUFFERMASK "+str(bufferSizeIO-1)+" // (max 255)")
+
 codeOut("");
-codeOutDevice("LED1")
-codeOutDevice("LED2")
-codeOutDevice("LED3")
-codeOutDevice("LED4")
-codeOutDevice("LED5")
-codeOutDevice("LED6")
-codeOutDevice("LED7")
-codeOutDevice("LED8")
-codeOutDevice("BTN1")
-codeOutDevice("BTN2")
-codeOutDevice("BTN3")
-codeOutDevice("BTN4")
+
+simpleDevices = [
+ "LED1","LED2","LED3","LED4","LED5","LED6","LED7","LED8",
+ "BTN1","BTN2","BTN3","BTN4"];
+usedPinChecks = ["false"];
+ledChecks = ["false"];
+btnChecks = ["false"];
+for device in simpleDevices:  
+  if device in board.devices: 
+    codeOutDevice(device)
+    check = "(PIN)==" + toPinDef(board.devices[device]["pin"])
+    if device[:3]=="LED": ledChecks.append(check)
+    if device[:3]=="BTN": btnChecks.append(check)
+#   usedPinChecks.append(check)
+# Actually we don't care about marking used pins for LEDs/Buttons
 
 if "USB" in board.devices:
   if "pin_disc" in board.devices["USB"]: codeOutDevicePin("USB", "pin_disc", "USB_DISCONNECT_PIN")
+
+
+for device in ["USB","SD","LCD"]:
+  if device in board.devices:
+    for entry in board.devices[device]: 
+      if entry[:3]=="pin": usedPinChecks.append("(PIN)==" + toPinDef(board.devices[device][entry])+"/* "+device+" */")
+
+codeOut("")
+
+codeOut("// definition to avoid compilation when Pin/platform config is not defined")
+codeOut("#define IS_PIN_USED_INTERNALLY(PIN) (("+")||(".join(usedPinChecks)+"))")
+codeOut("#define IS_PIN_A_LED(PIN) (("+")||(".join(ledChecks)+"))")
+codeOut("#define IS_PIN_A_BUTTON(PIN) (("+")||(".join(btnChecks)+"))")
+
 
 codeOut("""
 #endif // _PLATFORM_CONFIG_H
