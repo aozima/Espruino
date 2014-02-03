@@ -315,9 +315,7 @@ void USART6_IRQHandler(void) {
 static inline void SPI_IRQHandler(SPI_TypeDef *SPI, IOEventFlags device) {
    if(SPI_I2S_GetITStatus(SPI, SPI_I2S_IT_TXE) != RESET) {
      /* If we have other data to send, send it */
-     int c = jshSPIGetFlag(device,JSH_SPI_CONFIG_16_BIT) ?
-         jshGetShortToTransmit(device, 0) :
-         jshGetCharToTransmit(device, 0);
+     int c = jshGetCharToTransmit(device, 0);
      if (c >= 0) {
        SPI_I2S_SendData(SPI, (uint16_t)c);
      } else {

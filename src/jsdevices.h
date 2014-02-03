@@ -130,10 +130,6 @@ bool jshHasTransmitDataOnDevice(IOEventFlags device);
  * If deviceFlags!=0, it will be set to the flags that were in the event
  * queue (which could contain additional useful info) */
 int jshGetCharToTransmit(IOEventFlags device, IOEventFlags *deviceFlags);
-/** Try and get a short (16 bits) for transmission - could just return -1 if nothing.
- * This should be run IN AN INTERRUPT */
-int jshGetShortToTransmit(IOEventFlags device, IOEventFlags *deviceFlags);
-
 
 /// Set whether the host should transmit or not
 void jshSetFlowControlXON(IOEventFlags device, bool hostShouldTransmit);

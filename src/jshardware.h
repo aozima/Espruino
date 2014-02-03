@@ -175,6 +175,8 @@ void jshSPISet16(IOEventFlags device, bool is16);
 void jshSPISend(IOEventFlags device, unsigned char *data, unsigned int count, bool receiveData);
 /** Receive data from the SPI device (if any is available). Returns the number of characters available */
 unsigned int jshSPIReceive(IOEventFlags device, unsigned char *data, unsigned int count);
+/** Send data through the given SPI device. Simple and fast - NO IRQs. Use jshSPIWait before transmitting with this just to make sure IRQs aren't still on  */
+void jshSPISendFast(IOEventFlags device, unsigned short data);
 /** Wait until all SPI data has been sent */
 void jshSPIWait(IOEventFlags device);
 

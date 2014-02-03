@@ -43,7 +43,7 @@ JSH_SPI_FLAGS jshSPIFlags[SPIS];
 
 #define IRQ_PRIOR_MASSIVE 0
 #define IRQ_PRIOR_USART 6 // a little higher so we don't get lockups of something tries to print
-#define IRQ_PRIOR_SPI 3
+#define IRQ_PRIOR_SPI 3 // very high (for WS2811/etc - gaps are bad)
 #define IRQ_PRIOR_MED 7
 #define IRQ_PRIOR_LOW 15
 
@@ -1740,6 +1740,16 @@ void jshUSARTSetup(IOEventFlags device, JshUSARTInfo *inf) {
 /** Kick a device into action (if required). For instance we may need
  * to set up interrupts */
 void jshKickDevice(IOEventFlags device) {
+  SPI_TypeDef *spi = getSPIFromDevice(device);
+  if (spi) {
+    if (!jshIsDeviceInitialised(device)) {
+      JshSPIInfo inf;
+      jshSPIInitInfo(&inf);
+      jshSPISetup(device, &inf);
+    }
+
+    SPI_I2S_ITConfig(spi, SPI_I2S_IT_TXE, ENABLE);
+  }
   USART_TypeDef *uart = getUsartFromDevice(device);
   if (uart) {
     if (!jshIsDeviceInitialised(device)) {
@@ -1748,15 +1758,6 @@ void jshKickDevice(IOEventFlags device) {
       jshUSARTSetup(device, &inf);
     }
     USART_ITConfig(uart, USART_IT_TXE, ENABLE);
-  }
-  SPI_TypeDef *spi = getSPIFromDevice(device);
-  if (spi) {
-    if (!jshIsDeviceInitialised(device)) {
-      JshSPIInfo inf;
-      jshSPIInitInfo(&inf);
-      jshSPISetup(device, &inf);
-    }
-    SPI_I2S_ITConfig(spi, SPI_I2S_IT_TXE, ENABLE);
   }
 }
 
@@ -1824,9 +1825,12 @@ void jshSPISetup(IOEventFlags device, JshSPIInfo *inf) {
   NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
   NVIC_Init( &NVIC_InitStructure );
 
+  // set device flags
+  jshSPISetFlag(device, JSH_SPI_CONFIG_16_BIT, false);
+  jshSPISetFlag(device, JSH_SPI_CONFIG_RECEIVE_DATA, true);
+
   // Enable RX interrupt (TX is done when we have bytes)
   SPI_I2S_ITConfig(SPIx, SPI_I2S_IT_RXNE, ENABLE);
-
 
   /* Enable SPI  */
   SPI_Init(SPIx, &SPI_InitStructure);
@@ -1853,7 +1857,7 @@ void jshSPISend(IOEventFlags device, unsigned char *data, unsigned int count, bo
     jshSPISetFlag(device,JSH_SPI_CONFIG_RECEIVE_DATA, receiveData);
     SPI_I2S_ITConfig(getSPIFromDevice(device), SPI_I2S_IT_RXNE, receiveData ? ENABLE : DISABLE);
   }
-  jshTransmitMultiple(device, data, count);
+  if (count>0) jshTransmitMultiple(device, data, count);
 }
 
 /** Receive data from the SPI device (if any is available). Returns the number of characters available. count must be >=IOEVENT_MAXCHARS */
@@ -1869,14 +1873,23 @@ unsigned int jshSPIReceive(IOEventFlags device, unsigned char *data, unsigned in
   return bRead;
 }
 
+/** Send data through the given SPI device. Simple and fast - NO IRQs. Use jshSPIWait before transmitting with this just to make sure IRQs aren't still on  */
+void jshSPISendFast(IOEventFlags device, unsigned short data) {
+  assert(DEVICE_IS_SPI(device));
+  SPI_TypeDef *SPIx = getSPIFromDevice(device);
+  WAIT_UNTIL(SPI_I2S_GetFlagStatus(SPIx, SPI_I2S_FLAG_TXE)==SET, "SPI Fast Send");
+  SPI_I2S_SendData(SPIx, (uint16_t)data);
+}
+
+
 /** Wait until all SPI data has been sent */
 void jshSPIWait(IOEventFlags device) {
   assert(DEVICE_IS_SPI(device));
   // Wait until no data left to TX
-  WAIT_UNTIL(!jshHasTransmitDataOnDevice(device), "SPI TX QUEUE");
+  WAIT_UNTIL(!jshHasTransmitDataOnDevice(device), "SPI Wait");
   // wait until that has worked its way through the buffer
-  SPI_TypeDef *SPI = getSPIFromDevice(device);
-  WAIT_UNTIL(SPI_I2S_GetFlagStatus(SPI, SPI_I2S_FLAG_BSY) != SET, "SPI BSY");
+  SPI_TypeDef *SPIx = getSPIFromDevice(device);
+  WAIT_UNTIL(SPI_I2S_GetFlagStatus(SPIx, SPI_I2S_FLAG_BSY) != SET, "SPI Busy");
 }
 
 

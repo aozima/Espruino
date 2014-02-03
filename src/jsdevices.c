@@ -106,36 +106,6 @@ int jshGetCharToTransmit(IOEventFlags device, IOEventFlags *deviceFlags) {
   return -1; // no data :(
 }
 
-/** Try and get a short (16 bits) for transmission - could just return -1 if nothing.
- * This should be run IN AN INTERRUPT */
-int jshGetShortToTransmit(IOEventFlags device, IOEventFlags *deviceFlags) {
-  unsigned char ptr = txTail;
-  unsigned char ptr2 = (unsigned char)((ptr+1)&TXBUFFERMASK);
-  if (txHead==ptr) return -1;
-  while (txHead != ptr2) {
-    if (IOEVENTFLAGS_GETTYPE(txBuffer[ptr].flags) == device &&
-        IOEVENTFLAGS_GETTYPE(txBuffer[ptr2].flags) == device) {
-      if (deviceFlags) *deviceFlags = txBuffer[ptr].flags;
-      unsigned short data = (txBuffer[ptr].data<<8) | txBuffer[ptr2].data;
-      if (ptr != txTail) { // so we weren't right at the back of the queue
-        // we need to work back from ptr (until we hit tail), shifting everything forwards
-        unsigned char this = ptr;
-        unsigned char last = (unsigned char)((this+TXBUFFERMASK-1)&TXBUFFERMASK);
-        while (this!=txTail) { // if this==txTail, then last is before it, so stop here
-          txBuffer[this] = txBuffer[last];
-          this = (unsigned char)((this+TXBUFFERMASK)&TXBUFFERMASK);
-          last = (unsigned char)((last+TXBUFFERMASK)&TXBUFFERMASK);
-        }
-      }
-      txTail = (unsigned char)((txTail+2)&TXBUFFERMASK); // advance the tail
-      return data; // return data
-    }
-    ptr = ptr2;
-    ptr2 = (unsigned char)((ptr2+1)&TXBUFFERMASK);
-  }
-  return -1; // no data :(
-}
-
 void jshTransmitFlush() {
   jsiSetBusy(BUSY_TRANSMIT, true);
   while (jshHasTransmitData()) ; // wait for send to finish

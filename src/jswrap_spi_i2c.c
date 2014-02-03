@@ -233,17 +233,14 @@ JsVar *jswrap_spi_send(JsVar *parent, JsVar *srcdata, Pin nss_pin) {
 
 // used by jswrap_spi_send4bit
 int spi_pack4bit(unsigned char data, int bit0, int bit1) {
-  unsigned char lookup[] = {
-       (unsigned char)((bit0<<4) | bit0),
-       (unsigned char)((bit0<<4) | bit1),
-       (unsigned char)((bit1<<4) | bit0),
-       (unsigned char)((bit1<<4) | bit1),
-   };
-  unsigned char spiData[] = {
-     lookup[(data>>6)&3], lookup[(data>>4)&3],
-     lookup[(data>>2)&3], lookup[(data   )&3]
-  };
-  return *(int*)spiData;
+  return ((((data>>6)&1)?bit1:bit0)) |
+         ((((data>>7)&1)?bit1:bit0)<<4) |
+         ((((data>>4)&1)?bit1:bit0)<<8) |
+         ((((data>>5)&1)?bit1:bit0)<<12) |
+         ((((data>>2)&1)?bit1:bit0)<<16) |
+         ((((data>>3)&1)?bit1:bit0)<<20) |
+         ((((data   )&1)?bit1:bit0)<<24) |
+         ((((data>>1)&1)?bit1:bit0)<<28);
 }
 
 // used by jswrap_spi_send8bit
@@ -292,30 +289,31 @@ void jswrap_spi_send4bit(JsVar *parent, JsVar *srcdata, int bit0, int bit1, Pin 
 
   jshSPIWait(device);
   jshSPISet16(device, true);
+  jshSPISend(device, 0, 0, false); // set up for not receiving data
   // send data
   if (jsvIsNumeric(srcdata)) {
-    short s = spi_pack4bit((unsigned char)jsvGetInteger(srcdata), bit0, bit1);
-    jshSPISend(device, &s, sizeof(short), false);
-  } else if (jsvIsIterable(srcdata)) {
+    int s = spi_pack4bit((unsigned char)jsvGetInteger(srcdata), bit0, bit1);
     jshInterruptOff();
+    jshSPISendFast(device, s>>16);
+    jshSPISendFast(device, s);
+    jshInterruptOn();
+  } else if (jsvIsIterable(srcdata)) {
     JsvIterator it;
     jsvIteratorNew(&it, srcdata);
+    jshInterruptOff();
     while (jsvIteratorHasElement(&it)) {
-      int buf[8];
-      int c = 0;
-      do {
-        buf[c++] = spi_pack4bit((unsigned char)jsvIteratorGetIntegerValue(&it), bit0, bit1);
-        jsvIteratorNext(&it);
-      } while (c*sizeof(int)<sizeof(buf) && jsvIteratorHasElement(&it));
-      jshSPISend(device, buf, c*sizeof(int), true);
+      int s = spi_pack4bit((unsigned char)jsvIteratorGetIntegerValue(&it), bit0, bit1);
+      jshSPISendFast(device, s>>16);
+      jshSPISendFast(device, s);
+      jsvIteratorNext(&it);
     }
-    jsvIteratorFree(&it);
     jshInterruptOn();
+    jsvIteratorFree(&it);
   } else {
     jsError("Variable type not suited to transmit operation");
   }
   jshSPIWait(device);
-  jshSPISet16(device, false);
+ // jshSPISet16(device, false);
   // de-assert NSS
   if (nss_pin!=PIN_UNDEFINED) {
      jshSPIWait(device);
@@ -361,7 +359,6 @@ void jswrap_spi_send8bit(JsVar *parent, JsVar *srcdata, int bit0, int bit1, Pin 
   if (jsvIsNumeric(srcdata)) {
     spi_send8bit(device, (unsigned char)jsvGetInteger(srcdata), bit0, bit1);
   } else if (jsvIsIterable(srcdata)) {
-    jshInterruptOff();
     JsvIterator it;
     jsvIteratorNew(&it, srcdata);
     while (jsvIteratorHasElement(&it)) {
@@ -370,7 +367,6 @@ void jswrap_spi_send8bit(JsVar *parent, JsVar *srcdata, int bit0, int bit1, Pin 
       jsvIteratorNext(&it);
     }
     jsvIteratorFree(&it);
-    jshInterruptOn();
   } else {
     jsError("Variable type not suited to transmit operation");
   }
